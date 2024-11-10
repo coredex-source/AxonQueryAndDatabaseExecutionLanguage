@@ -48,4 +48,4 @@ AQADEL or AxonQueryAndDatabaseExecutionLanguage is a DBMS written in C.
 - help  -  Displays this message.
 
 ## Build using-
-``` gcc main.c config.c -o filename.exe ```
+    gcc main.c config.c -o filename.exe
