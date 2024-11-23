@@ -1,5 +1,6 @@
 # AQADEL
-AQADEL or AxonQueryAndDatabaseExecutionLanguage is a DBMS written in C.
+- AQADEL or AxonQueryAndDatabaseExecutionLanguage is a DBMS written in C.
+    - Commits and updates will be appriciated!
 
 ## Available Commands - 
 - createDatabase DatabaseName  -  Creates a database with a specified name and by default switches to the database.
