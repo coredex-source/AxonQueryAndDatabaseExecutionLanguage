@@ -57,7 +57,7 @@ int main(int argc, char** argv) {
         } while (!UserManager::authenticate(password));
     }
 
-    std::cout << "Welcome to " << AQADEL_NAME << " version " << AQADEL_VERSION << std::endl;
+    std::cout << "Welcome to " << AQADEL_NAME << "-" << AQADEL_VERSION << std::endl;
     std::cout << "Type 'help' for available commands or 'exit' to quit." << std::endl;
 
     CLI cli;

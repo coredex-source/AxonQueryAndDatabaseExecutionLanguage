@@ -34,6 +34,8 @@ bool CLI::processCommand(const std::string& command) {
         std::cout << "  createDatabase <name> - Create a new database" << std::endl;
         std::cout << "  useDatabase <name> - Switch to an existing database" << std::endl;
         std::cout << "  listDatabases - Show all available databases" << std::endl;
+        std::cout << "  listTables - Show all tables in current database" << std::endl;
+        std::cout << "  descTable <name> - Describe the structure of a table" << std::endl;
         std::cout << "  createTable TableName[col1 type, col2 type, ...] - Create a new table" << std::endl;
         std::cout << "    Supported types: int, float, bool, string{length}" << std::endl;
     }
@@ -58,6 +60,13 @@ bool CLI::processCommand(const std::string& command) {
     else if (cmd == "listDatabases") {
         listDatabases();
     }
+    else if (cmd == "listTables") {
+        if (currentDatabase.empty()) {
+            std::cout << "Error: No database selected. Use 'useDatabase' first." << std::endl;
+        } else {
+            listTables();
+        }
+    }
     else if (cmd == "createTable") {
         if (currentDatabase.empty()) {
             std::cout << "Error: No database selected. Use 'useDatabase' first." << std::endl;
@@ -65,6 +74,19 @@ bool CLI::processCommand(const std::string& command) {
             std::string tableCommand;
             std::getline(iss, tableCommand);
             createTable(tableCommand);
+        }
+    }
+    else if (cmd == "descTable") {
+        if (currentDatabase.empty()) {
+            std::cout << "Error: No database selected. Use 'useDatabase' first." << std::endl;
+        } else {
+            std::string tableName;
+            iss >> tableName;
+            if (tableName.empty()) {
+                std::cout << "Error: Table name is required" << std::endl;
+            } else {
+                descTable(tableName);
+            }
         }
     }
     else if (!command.empty()) {
@@ -283,4 +305,97 @@ bool CLI::parseColumns(const std::string& columnStr, std::vector<Column>& column
     }
 
     return true;
+}
+
+void CLI::listTables() {
+    std::filesystem::path dbPath = std::filesystem::current_path() / (currentDatabase + AQADEL_DB_EXT);
+    std::ifstream dbFile(dbPath, std::ios::binary);
+    std::stringstream buffer;
+    buffer << dbFile.rdbuf();
+    
+    std::string decrypted = Encryption::decrypt(buffer.str());
+    std::istringstream iss(decrypted);
+    std::string line;
+    bool found = false;
+    
+    std::cout << "Tables in database '" << currentDatabase << "':" << std::endl;
+    
+    while (std::getline(iss, line)) {
+        if (line.substr(0, 6) == "TABLE ") {
+            std::string tableName = line.substr(6);
+            tableName.erase(0, tableName.find_first_not_of(" \t"));
+            tableName.erase(tableName.find_last_not_of(" \t") + 1);
+            std::cout << "  " << tableName << std::endl;
+            found = true;
+        }
+    }
+    
+    if (!found) {
+        std::cout << "  No tables found" << std::endl;
+    }
+}
+
+void CLI::descTable(const std::string& tableName) {
+    std::filesystem::path dbPath = std::filesystem::current_path() / (currentDatabase + AQADEL_DB_EXT);
+    std::ifstream dbFile(dbPath, std::ios::binary);
+    std::stringstream buffer;
+    buffer << dbFile.rdbuf();
+    
+    std::string decrypted = Encryption::decrypt(buffer.str());
+    std::istringstream iss(decrypted);
+    std::string line;
+    
+    bool found = false;
+    bool inTargetTable = false;
+    std::cout << "Structure of table '" << tableName << "':" << std::endl;
+    const std::string separator(50, '-');  // Increased width
+    std::cout << separator << std::endl;
+    std::cout << std::left 
+              << std::setw(20) << "Column Name"    // Increased from 18
+              << std::setw(15) << "Type"
+              << "Size" << std::endl;
+    std::cout << separator << std::endl;
+    
+    while (std::getline(iss, line)) {
+        if (line.substr(0, 6) == "TABLE ") {
+            std::string currentTable = line.substr(6);
+            currentTable.erase(0, currentTable.find_first_not_of(" \t"));
+            currentTable.erase(currentTable.find_last_not_of(" \t") + 1);
+            
+            if (currentTable == tableName) {
+                found = true;
+                inTargetTable = true;
+            } else {
+                inTargetTable = false;
+            }
+        }
+        else if (inTargetTable && line.substr(0, 7) == "COLUMN ") {
+            std::istringstream colStream(line.substr(7));
+            std::string colName, colType;
+            int stringSize = 0;
+            
+            colStream >> colName >> colType;
+            if (colType == DT_STRING) {
+                colStream >> stringSize;
+            }
+            
+            std::cout << std::left 
+                     << std::setw(20) << colName    // Increased from 18
+                     << std::setw(15) << colType;
+            if (colType == DT_STRING) {
+                std::cout << stringSize;
+            } else {
+                std::cout << "-";  // Add dash for non-string types
+            }
+            std::cout << std::endl;
+        }
+        else if (inTargetTable && line == "END_TABLE") {
+            break;
+        }
+    }
+    
+    std::cout << separator << std::endl;
+    if (!found) {
+        std::cout << "Table '" << tableName << "' not found" << std::endl;
+    }
 }

@@ -17,9 +17,11 @@ private:
     bool createDatabase(const std::string& name);
     bool useDatabase(const std::string& name);
     void listDatabases();
+    void listTables();  // Add this line
     std::string currentDatabase;
     bool createTable(const std::string& command);
     bool parseColumns(const std::string& columnStr, std::vector<Column>& columns);
     void writeTableToDatabase(const std::string& tableName, const std::vector<Column>& columns);
     bool tableExists(const std::string& tableName);
+    void descTable(const std::string& tableName);  // Add this line
 };

@@ -12,12 +12,15 @@
 - createTable TableName[ColumnName datatype, ...]  -  Creates a table within a database.
   - Note: for string datatypes: string{length}
 
+- listTables  -  Shows a list of tables in the currently selected database.
+
+- descTable TableName  -  Describes the structure of a table.
+
 - exit  -  Exits program while saving all changes.
 
 - help  -  Displays this message.
 
 ## To be available commands -
-- listTables  -  Shows a list of tables in the currently selected database.
 
 - insertValues TableName(Value, ...)  -  Appends a value to a specified table.
   - Note: for string put the value in "".
