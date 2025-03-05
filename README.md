@@ -1,5 +1,5 @@
 # AQADEL
-- AQADEL or AxonQueryAndDatabaseExecutionLanguage is a DBMS written in C.
+- AQADEL or AxonQueryAndDatabaseExecutionLanguage is a DBMS written in C++.
     - Commits and updates will be appriciated!
 
 ## Available Commands - 
@@ -12,6 +12,11 @@
 - createTable TableName[ColumnName datatype, ...]  -  Creates a table within a database.
   - Note: for string datatypes: string{length}
 
+- exit  -  Exits program while saving all changes.
+
+- help  -  Displays this message.
+
+## To be available commands -
 - listTables  -  Shows a list of tables in the currently selected database.
 
 - insertValues TableName(Value, ...)  -  Appends a value to a specified table.
@@ -42,11 +47,11 @@
 
 - commitAll  -  Saves all changes done till now permanently.
 
-- exit  -  Exits program while saving all changes.
-
 - exit --no-save  -  Exits program while discarding all changes.
 
-- help  -  Displays this message.
-
-## Build using-
-    gcc main.c config.c -o filename.exe
+## Building on windows -
+  - Requirements:
+      - OpenSSL-Win64
+      - MinGW
+      - Windows 10 or above
+  - run Build.bat file to build the executable.
