@@ -404,7 +404,7 @@ std::string CLI::getDecryptedContent(const std::filesystem::path& dbPath) {
 
 bool CLI::tableExists(const std::string& tableName) {
     try {
-        std::filesystem::path dbPath(std::filesystem::current_path());
+        std::filesystem::path dbPath{std::filesystem::current_path()};
         dbPath /= (currentDatabase + AQADEL_DB_EXT);
         std::string decrypted = getDecryptedContent(dbPath);
         
@@ -492,7 +492,7 @@ bool CLI::parseColumns(const std::string& columnStr, std::vector<Column>& column
 void CLI::listTables() {
     try {
         // Fix the filesystem path construction
-        std::filesystem::path dbPath(std::filesystem::current_path());
+        std::filesystem::path dbPath{std::filesystem::current_path()};  // Use {} instead of ()
         dbPath /= (currentDatabase + AQADEL_DB_EXT);
 
         std::ifstream dbFile(dbPath, std::ios::binary);
@@ -994,18 +994,18 @@ bool CLI::loadDefaultDatabase() {
         if (std::filesystem::exists(DEFAULT_DB_FILE)) {
             std::ifstream configFile(DEFAULT_DB_FILE);
             std::string line;
-            std::getline(configFile, line);
-            
-            size_t pos = line.find("=");
-            if (pos != std::string::npos) {
-                std::string defaultDB = line.substr(pos + 1);
-                // Trim whitespace
-                defaultDB.erase(0, defaultDB.find_first_not_of(" \t"));
-                defaultDB.erase(defaultDB.find_last_not_of(" \t") + 1);
-                
-                if (!defaultDB.empty() && std::filesystem::exists(defaultDB + AQADEL_DB_EXT)) {
-                    useDatabase(defaultDB);
-                    return true;
+            if (configFile && std::getline(configFile, line)) {  // Fix nodiscard warning
+                size_t pos = line.find("=");
+                if (pos != std::string::npos) {
+                    std::string defaultDB = line.substr(pos + 1);
+                    // Trim whitespace
+                    defaultDB.erase(0, defaultDB.find_first_not_of(" \t"));
+                    defaultDB.erase(defaultDB.find_last_not_of(" \t") + 1);
+                    
+                    if (!defaultDB.empty() && std::filesystem::exists(defaultDB + AQADEL_DB_EXT)) {
+                        useDatabase(defaultDB);
+                        return true;
+                    }
                 }
             }
         }
