@@ -60,3 +60,5 @@
       - MinGW
       - Windows 10 or above
   - run Build.bat file to build the executable.
+
+- Pre-compiled binaries should be available in the actions tab.
