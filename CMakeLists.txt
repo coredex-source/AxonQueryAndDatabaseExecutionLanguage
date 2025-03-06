@@ -21,7 +21,7 @@ if(WIN32)
     else()
         # MSVC paths
         if(NOT DEFINED OPENSSL_ROOT_DIR)
-            set(OPENSSL_ROOT_DIR "C:/Program Files/OpenSSL-Win64")
+            set(OPENSSL_ROOT_DIR "C:/Program Files/OpenSSL")
         endif()
     endif()
 endif()
@@ -89,11 +89,11 @@ if(MSVC)
     )
     
     # Copy OpenSSL DLLs to output directory for MSVC
-    if(EXISTS "${OPENSSL_ROOT_DIR}/bin/libcrypto-3-x64.dll")
+    if(EXISTS "${OPENSSL_ROOT_DIR}/bin/libcrypto-3.dll")
         add_custom_command(TARGET aqadel POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                "${OPENSSL_ROOT_DIR}/bin/libcrypto-3-x64.dll"
-                "${OPENSSL_ROOT_DIR}/bin/libssl-3-x64.dll"
+                "${OPENSSL_ROOT_DIR}/bin/libcrypto-3.dll"
+                "${OPENSSL_ROOT_DIR}/bin/libssl-3.dll"
                 $<TARGET_FILE_DIR:aqadel>
         )
     endif()

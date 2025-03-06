@@ -50,10 +50,11 @@ jobs:
       if: runner.os == 'Windows'
       run: |
         choco install openssl --version=3.1.1 -y
-        dir "C:\Program Files\OpenSSL-Win64"
-        echo "OPENSSL_ROOT_DIR=C:\Program Files\OpenSSL-Win64" | Out-File -Append -FilePath $env:GITHUB_ENV
-        echo "OPENSSL_LIBRARIES=C:\Program Files\OpenSSL-Win64\lib" | Out-File -Append -FilePath $env:GITHUB_ENV
-        echo "OPENSSL_INCLUDE_DIR=C:\Program Files\OpenSSL-Win64\include" | Out-File -Append -FilePath $env:GITHUB_ENV
+        dir "C:\Program Files\OpenSSL"
+        echo "OPENSSL_ROOT_DIR=C:\Program Files\OpenSSL" | Out-File -Append -FilePath $env:GITHUB_ENV
+        echo "OPENSSL_LIBRARIES=C:\Program Files\OpenSSL\lib" | Out-File -Append -FilePath $env:GITHUB_ENV
+        echo "OPENSSL_INCLUDE_DIR=C:\Program Files\OpenSSL\include" | Out-File -Append -FilePath $env:GITHUB_ENV
+        refreshenv
 
     - name: Install OpenSSL (Ubuntu)
       if: runner.os == 'Linux'
