@@ -50,11 +50,16 @@ jobs:
       if: runner.os == 'Windows'
       run: |
         choco install openssl --version=3.1.1 -y
-        dir "C:\Program Files\OpenSSL"
+        # Import Chocolatey profile for refreshenv
+        $ChocolateyProfile = "$env:ChocolateyInstall\helpers\chocolateyProfile.psm1"
+        if (Test-Path($ChocolateyProfile)) {
+          Import-Module "$ChocolateyProfile"
+        }
+        refreshenv
         echo "OPENSSL_ROOT_DIR=C:\Program Files\OpenSSL" | Out-File -Append -FilePath $env:GITHUB_ENV
         echo "OPENSSL_LIBRARIES=C:\Program Files\OpenSSL\lib" | Out-File -Append -FilePath $env:GITHUB_ENV
         echo "OPENSSL_INCLUDE_DIR=C:\Program Files\OpenSSL\include" | Out-File -Append -FilePath $env:GITHUB_ENV
-        refreshenv
+        echo "PATH=C:\Program Files\OpenSSL\bin;$env:PATH" | Out-File -Append -FilePath $env:GITHUB_ENV
 
     - name: Install OpenSSL (Ubuntu)
       if: runner.os == 'Linux'
