@@ -25,7 +25,7 @@ bool handleFirstBoot() {
     return true;
 }
 
-int main(int argc, char** argv) {
+int main(int /*argc*/, char** /*argv*/) {
     if (!Encryption::initialize()) {
         std::cerr << "Failed to initialize encryption" << std::endl;
         return 1;

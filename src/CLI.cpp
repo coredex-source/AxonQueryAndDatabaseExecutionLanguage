@@ -489,7 +489,7 @@ bool CLI::parseColumns(const std::string& columnStr, std::vector<Column>& column
 
 void CLI::listTables() {
     try {
-        std::filesystem::path dbPath = std::filesystem::current_path() / (currentDatabase + AQADEL_DB_EXT);
+        auto dbPath = std::filesystem::current_path() / (currentDatabase + AQADEL_DB_EXT);
         std::ifstream dbFile(dbPath, std::ios::binary);
         if (!dbFile) {
             throw std::runtime_error("Cannot open database file");
@@ -1073,9 +1073,12 @@ std::string CLI::getRandomFunFact() {
         return "Goodbye!";
     }
 
-    unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
+    unsigned int seed = static_cast<unsigned int>(
+        std::chrono::system_clock::now().time_since_epoch().count()
+    );
     std::default_random_engine generator(seed);
-    std::uniform_int_distribution<int> distribution(0, funFacts.size() - 1);
+    int maxIdx = static_cast<int>(funFacts.size() - 1);
+    std::uniform_int_distribution<int> distribution(0, maxIdx);
     
     return "Fun fact: " + funFacts[distribution(generator)];
 }
