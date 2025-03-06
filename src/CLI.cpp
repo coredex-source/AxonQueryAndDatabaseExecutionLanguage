@@ -327,7 +327,8 @@ bool CLI::createTable(const std::string& command) {
 }
 
 void CLI::writeTableToDatabase(const std::string& tableName, const std::vector<Column>& columns) {
-    std::filesystem::path dbPath = std::filesystem::current_path() / (currentDatabase + AQADEL_DB_EXT);
+    std::filesystem::path dbPath(std::filesystem::current_path());
+    dbPath /= (currentDatabase + AQADEL_DB_EXT);
     
     // Read and decrypt existing content
     std::string fileContent = readAndVerifyDatabaseContent(dbPath);
@@ -403,7 +404,8 @@ std::string CLI::getDecryptedContent(const std::filesystem::path& dbPath) {
 
 bool CLI::tableExists(const std::string& tableName) {
     try {
-        std::filesystem::path dbPath = std::filesystem::current_path() / (currentDatabase + AQADEL_DB_EXT);
+        std::filesystem::path dbPath(std::filesystem::current_path());
+        dbPath /= (currentDatabase + AQADEL_DB_EXT);
         std::string decrypted = getDecryptedContent(dbPath);
         
         std::istringstream iss(decrypted);
@@ -489,7 +491,10 @@ bool CLI::parseColumns(const std::string& columnStr, std::vector<Column>& column
 
 void CLI::listTables() {
     try {
-        auto dbPath = std::filesystem::current_path() / (currentDatabase + AQADEL_DB_EXT);
+        // Fix the filesystem path construction
+        std::filesystem::path dbPath(std::filesystem::current_path());
+        dbPath /= (currentDatabase + AQADEL_DB_EXT);
+
         std::ifstream dbFile(dbPath, std::ios::binary);
         if (!dbFile) {
             throw std::runtime_error("Cannot open database file");
@@ -956,7 +961,8 @@ void CLI::displayTable(const std::string& tableName) {
 }
 
 bool CLI::setDefaultDatabase(const std::string& name) {
-    std::filesystem::path dbPath = std::filesystem::current_path() / (name + AQADEL_DB_EXT);
+    std::filesystem::path dbPath(std::filesystem::current_path());
+    dbPath /= (name + AQADEL_DB_EXT);
     
     if (!std::filesystem::exists(dbPath)) {
         std::cout << "Error: Database '" << name << "' does not exist" << std::endl;
@@ -965,9 +971,17 @@ bool CLI::setDefaultDatabase(const std::string& name) {
 
     try {
         std::ofstream configFile(DEFAULT_DB_FILE);
+        if (!configFile.is_open()) {
+            throw std::runtime_error("Cannot open config file");
+        }
         configFile << "defaultDatabase = " << name << std::endl;
-        std::cout << "Set '" << name << "' as default database" << std::endl;
-        return true;
+        bool success = !configFile.fail();
+        configFile.close();
+        
+        if (success) {
+            std::cout << "Set '" << name << "' as default database" << std::endl;
+        }
+        return success;
     }
     catch (const std::exception& e) {
         std::cout << "Error setting default database: " << e.what() << std::endl;
