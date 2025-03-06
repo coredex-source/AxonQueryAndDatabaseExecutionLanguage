@@ -2,9 +2,9 @@ name: Build
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main-cpp" ]
   pull_request:
-    branches: [ "main" ]
+    branches: [ "main-cpp" ]
 
 env:
   BUILD_TYPE: Release
