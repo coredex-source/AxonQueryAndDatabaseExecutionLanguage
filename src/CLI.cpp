@@ -330,13 +330,9 @@ void CLI::writeTableToDatabase(const std::string& tableName, const std::vector<C
     std::filesystem::path dbPath = std::filesystem::current_path() / (currentDatabase + AQADEL_DB_EXT);
     
     // Read and decrypt existing content
-    std::string existingContent;
-    {
-        std::ifstream inFile(dbPath, std::ios::binary);
-        std::stringstream buffer;
-        buffer << inFile.rdbuf();
-        existingContent = Encryption::decrypt(buffer.str());
-    }
+    std::string fileContent = readAndVerifyDatabaseContent(dbPath);
+    std::string encryptedContent = extractEncryptedContent(fileContent);
+    std::string existingContent = Encryption::decrypt(encryptedContent);
     
     // Add new table definition
     std::stringstream newContent;
@@ -349,37 +345,86 @@ void CLI::writeTableToDatabase(const std::string& tableName, const std::vector<C
         }
         newContent << "\n";
     }
+    newContent << TABLE_DATA_START << "\n";  // Add empty data section
+    newContent << TABLE_DATA_END << "\n";
     newContent << "END_TABLE\n";
     
-    // Write encrypted content back
-    std::ofstream outFile(dbPath, std::ios::binary);
+    // Write encrypted content back with integrity check
     std::string encrypted = Encryption::encrypt(newContent.str());
-    outFile.write(encrypted.c_str(), encrypted.length());
+    std::string integrity = Encryption::hashString(encrypted);
+    std::string finalContent = std::string(DB_INTEGRITY_MARKER) + integrity + "\n" + encrypted;
+    
+    std::ofstream outFile(dbPath, std::ios::binary | std::ios::trunc);
+    outFile.write(finalContent.c_str(), finalContent.length());
+}
+
+std::string CLI::readAndVerifyDatabaseContent(const std::filesystem::path& dbPath) {
+    std::ifstream dbFile(dbPath, std::ios::binary);
+    if (!dbFile) {
+        throw std::runtime_error("Cannot open database file");
+    }
+
+    std::stringstream buffer;
+    buffer << dbFile.rdbuf();
+    return buffer.str();
+}
+
+std::string CLI::extractEncryptedContent(const std::string& fileContent) {
+    size_t integrityPos = fileContent.find(DB_INTEGRITY_MARKER);
+    if (integrityPos == std::string::npos) {
+        throw std::runtime_error("Invalid database format (missing integrity marker)");
+    }
+
+    size_t dataStart = fileContent.find('\n', integrityPos);
+    if (dataStart == std::string::npos) {
+        throw std::runtime_error("Invalid database format (missing newline)");
+    }
+
+    std::string storedHash = fileContent.substr(
+        integrityPos + strlen(DB_INTEGRITY_MARKER),
+        dataStart - (integrityPos + strlen(DB_INTEGRITY_MARKER))
+    );
+
+    std::string encryptedContent = fileContent.substr(dataStart + 1);
+    std::string computedHash = Encryption::hashString(encryptedContent);
+
+    if (storedHash != computedHash) {
+        throw std::runtime_error("Database integrity check failed");
+    }
+
+    return encryptedContent;
+}
+
+std::string CLI::getDecryptedContent(const std::filesystem::path& dbPath) {
+    std::string fileContent = readAndVerifyDatabaseContent(dbPath);
+    std::string encryptedContent = extractEncryptedContent(fileContent);
+    return Encryption::decrypt(encryptedContent);
 }
 
 bool CLI::tableExists(const std::string& tableName) {
-    std::filesystem::path dbPath = std::filesystem::current_path() / (currentDatabase + AQADEL_DB_EXT);
-    std::ifstream dbFile(dbPath, std::ios::binary);
-    std::stringstream buffer;
-    buffer << dbFile.rdbuf();
-    
-    std::string decrypted = Encryption::decrypt(buffer.str());
-    std::istringstream iss(decrypted);
-    std::string line;
-    
-    while (std::getline(iss, line)) {
-        if (line.substr(0, 6) == "TABLE ") {
-            std::string existingTable = line.substr(6);
-            existingTable.erase(0, existingTable.find_first_not_of(" \t"));
-            existingTable.erase(existingTable.find_last_not_of(" \t") + 1);
-            
-            if (existingTable == tableName) {
-                return true;
+    try {
+        std::filesystem::path dbPath = std::filesystem::current_path() / (currentDatabase + AQADEL_DB_EXT);
+        std::string decrypted = getDecryptedContent(dbPath);
+        
+        std::istringstream iss(decrypted);
+        std::string line;
+        
+        while (std::getline(iss, line)) {
+            if (line.substr(0, 6) == "TABLE ") {
+                std::string existingTable = line.substr(6);
+                existingTable.erase(0, existingTable.find_first_not_of(" \t"));
+                existingTable.erase(existingTable.find_last_not_of(" \t") + 1);
+                
+                if (existingTable == tableName) {
+                    return true;
+                }
             }
         }
+        return false;
     }
-    
-    return false;
+    catch (const std::exception&) {
+        return false;
+    }
 }
 
 bool CLI::parseColumns(const std::string& columnStr, std::vector<Column>& columns) {
@@ -443,140 +488,216 @@ bool CLI::parseColumns(const std::string& columnStr, std::vector<Column>& column
 }
 
 void CLI::listTables() {
-    std::filesystem::path dbPath = std::filesystem::current_path() / (currentDatabase + AQADEL_DB_EXT);
-    std::ifstream dbFile(dbPath, std::ios::binary);
-    std::stringstream buffer;
-    buffer << dbFile.rdbuf();
-    
-    std::string decrypted = Encryption::decrypt(buffer.str());
-    std::istringstream iss(decrypted);
-    std::string line;
-    bool found = false;
-    std::set<std::string> tableNames;  // Use set to avoid duplicates
-    
-    std::cout << "Tables in database '" << currentDatabase << "':" << std::endl;
-    
-    while (std::getline(iss, line)) {
-        if (line.substr(0, 6) == "TABLE ") {
-            std::string tableName = line.substr(6);
-            tableName.erase(0, tableName.find_first_not_of(" \t"));
-            tableName.erase(tableName.find_last_not_of(" \t") + 1);
-            tableNames.insert(tableName);  // Add to set
-            found = true;
+    try {
+        std::filesystem::path dbPath = std::filesystem::current_path() / (currentDatabase + AQADEL_DB_EXT);
+        std::ifstream dbFile(dbPath, std::ios::binary);
+        if (!dbFile) {
+            throw std::runtime_error("Cannot open database file");
         }
-    }
-    
-    // Print unique table names
-    for (const auto& tableName : tableNames) {
-        std::cout << "  " << tableName << std::endl;
-    }
-    
-    if (!found) {
-        std::cout << "  No tables found" << std::endl;
+        
+        // Read file content and verify integrity
+        std::string content;
+        {
+            std::stringstream buffer;
+            buffer << dbFile.rdbuf();
+            content = buffer.str();
+        }
+        
+        // Extract and verify integrity marker
+        size_t integrityPos = content.find(DB_INTEGRITY_MARKER);
+        if (integrityPos == std::string::npos) {
+            throw std::runtime_error("Invalid database format");
+        }
+        
+        size_t dataStart = content.find('\n', integrityPos);
+        if (dataStart == std::string::npos) {
+            throw std::runtime_error("Invalid database format");
+        }
+        
+        std::string storedHash = content.substr(
+            integrityPos + strlen(DB_INTEGRITY_MARKER),
+            dataStart - (integrityPos + strlen(DB_INTEGRITY_MARKER))
+        );
+        
+        std::string encryptedContent = content.substr(dataStart + 1);
+        std::string computedHash = Encryption::hashString(encryptedContent);
+        
+        if (storedHash != computedHash) {
+            throw std::runtime_error("Database integrity check failed");
+        }
+        
+        // Decrypt and process content
+        std::string decrypted = Encryption::decrypt(encryptedContent);
+        std::istringstream iss(decrypted);
+        std::string line;
+        bool found = false;
+        std::set<std::string> tableNames;
+        
+        std::cout << "Tables in database '" << currentDatabase << "':" << std::endl;
+        
+        while (std::getline(iss, line)) {
+            if (line.substr(0, 6) == "TABLE ") {
+                std::string tableName = line.substr(6);
+                tableName.erase(0, tableName.find_first_not_of(" \t"));
+                tableName.erase(tableName.find_last_not_of(" \t") + 1);
+                tableNames.insert(tableName);
+                found = true;
+            }
+        }
+        
+        for (const auto& tableName : tableNames) {
+            std::cout << "  " << tableName << std::endl;
+        }
+        
+        if (!found) {
+            std::cout << "  No tables found" << std::endl;
+        }
+    } catch (const std::exception& e) {
+        std::cout << "Error: " << e.what() << std::endl;
     }
 }
 
 void CLI::descTable(const std::string& tableName) {
-    std::filesystem::path dbPath = std::filesystem::current_path() / (currentDatabase + AQADEL_DB_EXT);
-    std::ifstream dbFile(dbPath, std::ios::binary);
-    std::stringstream buffer;
-    buffer << dbFile.rdbuf();
-    
-    std::string decrypted = Encryption::decrypt(buffer.str());
-    std::istringstream iss(decrypted);
-    std::string line;
-    
-    bool found = false;
-    bool inTargetTable = false;
-    std::cout << "Structure of table '" << tableName << "':" << std::endl;
-    const std::string separator(50, '-');  // Increased width
-    std::cout << separator << std::endl;
-    std::cout << std::left 
-              << std::setw(20) << "Column Name"    // Increased from 18
-              << std::setw(15) << "Type"
-              << "Size" << std::endl;
-    std::cout << separator << std::endl;
-    
-    while (std::getline(iss, line)) {
-        if (line.substr(0, 6) == "TABLE ") {
-            std::string currentTable = line.substr(6);
-            currentTable.erase(0, currentTable.find_first_not_of(" \t"));
-            currentTable.erase(currentTable.find_last_not_of(" \t") + 1);
-            
-            if (currentTable == tableName) {
-                found = true;
-                inTargetTable = true;
-            } else {
-                inTargetTable = false;
+    try {
+        std::filesystem::path dbPath = std::filesystem::current_path() / (currentDatabase + AQADEL_DB_EXT);
+        std::ifstream dbFile(dbPath, std::ios::binary);
+        if (!dbFile) {
+            throw std::runtime_error("Cannot open database file");
+        }
+
+        // Read file content and verify integrity
+        std::string content;
+        {
+            std::stringstream buffer;
+            buffer << dbFile.rdbuf();
+            content = buffer.str();
+        }
+        
+        // Extract and verify integrity marker
+        size_t integrityPos = content.find(DB_INTEGRITY_MARKER);
+        if (integrityPos == std::string::npos) {
+            throw std::runtime_error("Invalid database format");
+        }
+        
+        size_t dataStart = content.find('\n', integrityPos);
+        if (dataStart == std::string::npos) {
+            throw std::runtime_error("Invalid database format");
+        }
+        
+        std::string storedHash = content.substr(
+            integrityPos + strlen(DB_INTEGRITY_MARKER),
+            dataStart - (integrityPos + strlen(DB_INTEGRITY_MARKER))
+        );
+        
+        std::string encryptedContent = content.substr(dataStart + 1);
+        std::string computedHash = Encryption::hashString(encryptedContent);
+        
+        if (storedHash != computedHash) {
+            throw std::runtime_error("Database integrity check failed");
+        }
+
+        // Decrypt and process content
+        std::string decrypted = Encryption::decrypt(encryptedContent);
+        std::istringstream iss(decrypted);
+        std::string line;
+        
+        bool found = false;
+        bool inTargetTable = false;
+        std::cout << "Structure of table '" << tableName << "':" << std::endl;
+        const std::string separator(50, '-');
+        std::cout << separator << std::endl;
+        std::cout << std::left 
+                  << std::setw(20) << "Column Name"
+                  << std::setw(15) << "Type"
+                  << "Size" << std::endl;
+        std::cout << separator << std::endl;
+        
+        while (std::getline(iss, line)) {
+            if (line.substr(0, 6) == "TABLE ") {
+                std::string currentTable = line.substr(6);
+                currentTable.erase(0, currentTable.find_first_not_of(" \t"));
+                currentTable.erase(currentTable.find_last_not_of(" \t") + 1);
+                
+                if (currentTable == tableName) {
+                    found = true;
+                    inTargetTable = true;
+                } else {
+                    inTargetTable = false;
+                }
+            }
+            else if (inTargetTable && line.substr(0, 7) == "COLUMN ") {
+                std::istringstream colStream(line.substr(7));
+                std::string colName, colType;
+                int stringSize = 0;
+                
+                colStream >> colName >> colType;
+                if (colType == DT_STRING) {
+                    colStream >> stringSize;
+                }
+                
+                std::cout << std::left 
+                         << std::setw(20) << colName
+                         << std::setw(15) << colType;
+                if (colType == DT_STRING) {
+                    std::cout << stringSize;
+                } else {
+                    std::cout << "-";
+                }
+                std::cout << std::endl;
+            }
+            else if (inTargetTable && line == "END_TABLE") {
+                break;
             }
         }
-        else if (inTargetTable && line.substr(0, 7) == "COLUMN ") {
-            std::istringstream colStream(line.substr(7));
-            std::string colName, colType;
-            int stringSize = 0;
-            
-            colStream >> colName >> colType;
-            if (colType == DT_STRING) {
-                colStream >> stringSize;
-            }
-            
-            std::cout << std::left 
-                     << std::setw(20) << colName    // Increased from 18
-                     << std::setw(15) << colType;
-            if (colType == DT_STRING) {
-                std::cout << stringSize;
-            } else {
-                std::cout << "-";  // Add dash for non-string types
-            }
-            std::cout << std::endl;
-        }
-        else if (inTargetTable && line == "END_TABLE") {
-            break;
+        
+        std::cout << separator << std::endl;
+        if (!found) {
+            std::cout << "Table '" << tableName << "' not found" << std::endl;
         }
     }
-    
-    std::cout << separator << std::endl;
-    if (!found) {
-        std::cout << "Table '" << tableName << "' not found" << std::endl;
+    catch (const std::exception& e) {
+        std::cout << "Error: " << e.what() << std::endl;
     }
 }
 
 std::vector<Column> CLI::getTableColumns(const std::string& tableName) {
     std::vector<Column> columns;
-    std::filesystem::path dbPath = std::filesystem::current_path() / (currentDatabase + AQADEL_DB_EXT);
-    std::ifstream dbFile(dbPath, std::ios::binary);
-    std::stringstream buffer;
-    buffer << dbFile.rdbuf();
-    
-    std::string decrypted = Encryption::decrypt(buffer.str());
-    std::istringstream iss(decrypted);
-    std::string line;
-    bool inTargetTable = false;
-    
-    while (std::getline(iss, line)) {
-        if (line.substr(0, 6) == "TABLE ") {
-            std::string currentTable = line.substr(6);
-            currentTable.erase(0, currentTable.find_first_not_of(" \t"));
-            currentTable.erase(currentTable.find_last_not_of(" \t") + 1);
-            
-            if (currentTable == tableName) {
-                inTargetTable = true;
-            } else {
-                inTargetTable = false;
+    try {
+        std::filesystem::path dbPath = std::filesystem::current_path() / (currentDatabase + AQADEL_DB_EXT);
+        std::string decrypted = getDecryptedContent(dbPath);
+        
+        std::istringstream iss(decrypted);
+        std::string line;
+        bool inTargetTable = false;
+        
+        while (std::getline(iss, line)) {
+            if (line.substr(0, 6) == "TABLE ") {
+                std::string currentTable = line.substr(6);
+                currentTable.erase(0, currentTable.find_first_not_of(" \t"));
+                currentTable.erase(currentTable.find_last_not_of(" \t") + 1);
+                
+                if (currentTable == tableName) {
+                    inTargetTable = true;
+                } else {
+                    inTargetTable = false;
+                }
+            }
+            else if (inTargetTable && line.substr(0, 7) == "COLUMN ") {
+                std::istringstream colStream(line.substr(7));
+                Column col;
+                colStream >> col.name >> col.dataType;
+                if (col.dataType == DT_STRING) {
+                    colStream >> col.stringLength;
+                }
+                columns.push_back(col);
+            }
+            else if (inTargetTable && line == "END_TABLE") {
+                break;
             }
         }
-        else if (inTargetTable && line.substr(0, 7) == "COLUMN ") {
-            std::istringstream colStream(line.substr(7));
-            Column col;
-            colStream >> col.name >> col.dataType;
-            if (col.dataType == DT_STRING) {
-                colStream >> col.stringLength;
-            }
-            columns.push_back(col);
-        }
-        else if (inTargetTable && line == "END_TABLE") {
-            break;
-        }
+    }
+    catch (const std::exception&) {
+        columns.clear();
     }
     return columns;
 }
@@ -636,22 +757,22 @@ bool CLI::insertValues(const std::string& command) {
     std::vector<Column> columns = getTableColumns(tableName);
     std::string valuesStr = command.substr(bracketStart + 1, bracketEnd - bracketStart - 1);
     std::vector<std::string> values;
-    std::string value;
-    std::istringstream valueStream(valuesStr);
-    bool insideQuotes = false;
+    
+    // Parse values handling quoted strings
     std::string currentValue;
-
-    // Custom value parsing to handle quoted strings
+    bool insideQuotes = false;
     for (char c : valuesStr) {
         if (c == '"') {
             insideQuotes = !insideQuotes;
             currentValue += c;
         }
         else if (c == ',' && !insideQuotes) {
-            currentValue.erase(0, currentValue.find_first_not_of(" \t"));
-            currentValue.erase(currentValue.find_last_not_of(" \t") + 1);
-            values.push_back(currentValue);
-            currentValue.clear();
+            if (!currentValue.empty()) {
+                currentValue.erase(0, currentValue.find_first_not_of(" \t"));
+                currentValue.erase(currentValue.find_last_not_of(" \t") + 1);
+                values.push_back(currentValue);
+                currentValue.clear();
+            }
         }
         else {
             currentValue += c;
@@ -664,7 +785,8 @@ bool CLI::insertValues(const std::string& command) {
     }
 
     if (values.size() != columns.size()) {
-        std::cout << "Error: Number of values does not match number of columns" << std::endl;
+        std::cout << "Error: Number of values (" << values.size() 
+                 << ") does not match number of columns (" << columns.size() << ")" << std::endl;
         return false;
     }
 
@@ -674,171 +796,162 @@ bool CLI::insertValues(const std::string& command) {
         std::string parsedValue;
         parseValue(values[i], parsedValue);
         if (!validateValue(parsedValue, columns[i])) {
-            std::cout << "Error: Invalid value for column '" << columns[i].name << "': " << values[i] << std::endl;
+            std::cout << "Error: Invalid value for column '" << columns[i].name 
+                     << "' (" << columns[i].dataType << "): " << values[i] << std::endl;
             return false;
         }
         parsedValues.push_back(parsedValue);
     }
 
-    // Append values to database file
-    std::filesystem::path dbPath = std::filesystem::current_path() / (currentDatabase + AQADEL_DB_EXT);
-    std::string content;
-    {
-        std::ifstream inFile(dbPath, std::ios::binary);
-        std::stringstream buffer;
-        buffer << inFile.rdbuf();
-        content = Encryption::decrypt(buffer.str());
-    }
-
-    std::istringstream iss(content);
-    std::ostringstream oss;
-    std::string line;
-    bool inTargetTable = false;
-    bool dataStartFound = false;
-    bool dataEndFound = false;
-    std::vector<std::string> existingData;
-
-    // First pass: preserve all content and collect data
-    while (std::getline(iss, line)) {
-        if (!inTargetTable) {
-            oss << line << "\n";
-        }
+    try {
+        // Read existing database content
+        std::filesystem::path dbPath = std::filesystem::current_path() / (currentDatabase + AQADEL_DB_EXT);
+        std::string fileContent = readAndVerifyDatabaseContent(dbPath);
+        std::string encryptedContent = extractEncryptedContent(fileContent);
+        std::string decrypted = Encryption::decrypt(encryptedContent);
         
-        if (line.substr(0, 6) == "TABLE " && line.substr(6) == tableName) {
-            inTargetTable = true;
-            oss << line << "\n";  // Write the table header
-            continue;
-        }
+        // Process the content and add new data
+        std::istringstream iss(decrypted);
+        std::ostringstream oss;
+        std::string line;
+        bool inTargetTable = false;
+        bool dataStartFound = false;
+        bool dataEndFound = false;
+        std::vector<std::string> existingRows;
         
-        if (inTargetTable) {
-            if (line == TABLE_DATA_START) {
+        while (std::getline(iss, line)) {
+            if (line.substr(0, 6) == "TABLE " && line.substr(6) == tableName) {
+                inTargetTable = true;
+                oss << line << "\n";
+            }
+            else if (inTargetTable && line == TABLE_DATA_START) {
                 dataStartFound = true;
-                continue;  // Don't write DATA_START yet
+                oss << line << "\n";
             }
-            else if (line == TABLE_DATA_END) {
-                dataEndFound = true;
-                continue;  // Don't write DATA_END yet
-            }
-            else if (dataStartFound && !dataEndFound) {
-                existingData.push_back(line);  // Collect existing data
-                continue;
-            }
-            else if (line == "END_TABLE") {
-                // Write the data section before END_TABLE
-                oss << TABLE_DATA_START << "\n";
-                
-                // Write existing data
-                for (const auto& dataRow : existingData) {
-                    oss << dataRow << "\n";
+            else if (inTargetTable && line == TABLE_DATA_END) {
+                // Insert new row before DATA_END
+                std::string newRow;
+                for (const auto& value : parsedValues) {
+                    if (!newRow.empty()) newRow += ROW_SEPARATOR;
+                    newRow += value;
                 }
-                
-                // Write new data
+                for (const auto& existingRow : existingRows) {
+                    oss << existingRow << "\n";
+                }
+                oss << newRow << "\n";
+                oss << line << "\n";
+                dataEndFound = true;
+            }
+            else if (inTargetTable && dataStartFound && !dataEndFound && line != TABLE_DATA_END) {
+                // Store existing data rows
+                existingRows.push_back(line);
+            }
+            else if (inTargetTable && line == "END_TABLE" && !dataStartFound) {
+                // If no data section exists, create one
+                oss << TABLE_DATA_START << "\n";
                 std::string newRow;
                 for (const auto& value : parsedValues) {
                     if (!newRow.empty()) newRow += ROW_SEPARATOR;
                     newRow += value;
                 }
                 oss << newRow << "\n";
-                
                 oss << TABLE_DATA_END << "\n";
-                oss << "END_TABLE\n";
+                oss << line << "\n";
                 inTargetTable = false;
-                continue;
             }
-            
-            if (!dataStartFound) {
-                oss << line << "\n";  // Write table structure (columns)
+            else {
+                oss << line << "\n";
             }
         }
+
+        // Encrypt and write back to file
+        std::string newContent = oss.str();
+        std::string encrypted = Encryption::encrypt(newContent);
+        
+        // Add integrity marker
+        std::string integrity = Encryption::hashString(encrypted);
+        std::string finalContent = std::string(DB_INTEGRITY_MARKER) + integrity + "\n" + encrypted;
+        
+        std::ofstream outFile(dbPath, std::ios::binary | std::ios::trunc);
+        outFile.write(finalContent.c_str(), finalContent.length());
+        
+        std::cout << "Values inserted successfully" << std::endl;
+        return true;
     }
-
-    // Handle case where we're still in the target table at EOF
-    if (inTargetTable) {
-        oss << TABLE_DATA_START << "\n";
-        for (const auto& dataRow : existingData) {
-            oss << dataRow << "\n";
-        }
-        std::string newRow;
-        for (const auto& value : parsedValues) {
-            if (!newRow.empty()) newRow += ROW_SEPARATOR;
-            newRow += value;
-        }
-        oss << newRow << "\n";
-        oss << TABLE_DATA_END << "\n";
-        oss << "END_TABLE\n";
+    catch (const std::exception& e) {
+        std::cout << "Error: Failed to insert values - " << e.what() << std::endl;
+        return false;
     }
-
-    // Write back to file
-    std::ofstream outFile(dbPath, std::ios::binary);
-    std::string encrypted = Encryption::encrypt(oss.str());
-    outFile.write(encrypted.c_str(), encrypted.length());
-
-    std::cout << "Values inserted successfully" << std::endl;
-    return true;
 }
 
 void CLI::displayTable(const std::string& tableName) {
-    if (!tableExists(tableName)) {
-        std::cout << "Error: Table '" << tableName << "' does not exist" << std::endl;
-        return;
-    }
-
-    std::vector<Column> columns = getTableColumns(tableName);
-    std::filesystem::path dbPath = std::filesystem::current_path() / (currentDatabase + AQADEL_DB_EXT);
-    std::ifstream dbFile(dbPath, std::ios::binary);
-    std::stringstream buffer;
-    buffer << dbFile.rdbuf();
-    
-    std::string decrypted = Encryption::decrypt(buffer.str());
-    std::istringstream iss(decrypted);
-    std::string line;
-    bool inTargetTable = false;
-    bool inData = false;
-    bool hasData = false;
-
-    // Calculate column widths
-    std::vector<size_t> colWidths;
-    for (const auto& col : columns) {
-        colWidths.push_back(std::max(col.name.length(), size_t(15)));
-    }
-
-    // Print header
-    std::cout << std::string(50, '-') << std::endl;
-    for (size_t i = 0; i < columns.size(); i++) {
-        std::cout << std::left << std::setw(colWidths[i]) << columns[i].name << " ";
-    }
-    std::cout << std::endl << std::string(50, '-') << std::endl;
-
-    while (std::getline(iss, line)) {
-        if (line.substr(0, 6) == "TABLE " && line.substr(6) == tableName) {
-            inTargetTable = true;
+    try {
+        std::filesystem::path dbPath = std::filesystem::current_path() / (currentDatabase + AQADEL_DB_EXT);
+        
+        // Get database content
+        std::string decrypted = getDecryptedContent(dbPath);
+        
+        // Get table columns
+        std::vector<Column> columns = getTableColumns(tableName);
+        if (columns.empty()) {
+            throw std::runtime_error("Table structure not found");
         }
-        else if (inTargetTable && line == TABLE_DATA_START) {
-            inData = true;
+
+        // Process table data
+        std::istringstream iss(decrypted);
+        std::string line;
+        bool inTargetTable = false;
+        bool inData = false;
+        bool hasData = false;
+
+        // Calculate column widths
+        std::vector<size_t> colWidths;
+        for (const auto& col : columns) {
+            colWidths.push_back(std::max(col.name.length(), size_t(15)));
         }
-        else if (inTargetTable && line == TABLE_DATA_END) {
-            inData = false;
-            break;
+
+        // Print header
+        std::cout << std::string(50, '-') << std::endl;
+        for (size_t i = 0; i < columns.size(); i++) {
+            std::cout << std::left << std::setw(colWidths[i]) << columns[i].name << " ";
         }
-        else if (inData) {
-            hasData = true;
-            std::istringstream rowStream(line);
-            std::string value;
-            size_t colIndex = 0;
-            
-            while (std::getline(rowStream, value, *ROW_SEPARATOR)) {
-                if (colIndex < columns.size()) {
-                    std::cout << std::left << std::setw(colWidths[colIndex]) << value << " ";
-                }
-                colIndex++;
+        std::cout << std::endl << std::string(50, '-') << std::endl;
+
+        // Display data
+        while (std::getline(iss, line)) {
+            if (line.substr(0, 6) == "TABLE " && line.substr(6) == tableName) {
+                inTargetTable = true;
             }
-            std::cout << std::endl;
+            else if (inTargetTable && line == TABLE_DATA_START) {
+                inData = true;
+            }
+            else if (inTargetTable && line == TABLE_DATA_END) {
+                inData = false;
+                break;
+            }
+            else if (inData) {
+                hasData = true;
+                std::istringstream rowStream(line);
+                std::string value;
+                size_t colIndex = 0;
+                
+                while (std::getline(rowStream, value, *ROW_SEPARATOR)) {
+                    if (colIndex < columns.size()) {
+                        std::cout << std::left << std::setw(colWidths[colIndex]) << value << " ";
+                    }
+                    colIndex++;
+                }
+                std::cout << std::endl;
+            }
+        }
+
+        std::cout << std::string(50, '-') << std::endl;
+        if (!hasData) {
+            std::cout << "No data in table" << std::endl;
         }
     }
-
-    std::cout << std::string(50, '-') << std::endl;
-    if (!hasData) {
-        std::cout << "No data in table" << std::endl;
+    catch (const std::exception& e) {
+        std::cout << "Error: " << e.what() << std::endl;
     }
 }
 

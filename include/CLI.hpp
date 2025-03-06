@@ -1,6 +1,7 @@
 #pragma once
 #include <string>
 #include <vector>
+#include <filesystem>
 
 // Remove conio.h dependency
 #ifdef _WIN32
@@ -42,4 +43,8 @@ private:
     bool loadDefaultDatabase();
     std::string resolveCommandAlias(const std::string& cmd);
     std::string getRandomFunFact();
+    // Add new helper methods
+    std::string readAndVerifyDatabaseContent(const std::filesystem::path& dbPath);
+    std::string extractEncryptedContent(const std::string& fileContent);
+    std::string getDecryptedContent(const std::filesystem::path& dbPath);
 };

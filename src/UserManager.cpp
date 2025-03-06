@@ -143,27 +143,43 @@ bool UserManager::saveUsers() {
 }
 
 bool UserManager::loadUsers() {
-    if (!std::filesystem::exists(getUserFilePath())) {
-        return true;  // No users file is valid for first boot
-    }
-    
     try {
+        if (!std::filesystem::exists(getUserFilePath())) {
+            return true;  // First boot case
+        }
+        
         std::ifstream file(getUserFilePath(), std::ios::binary);
-        if (!file.is_open()) return false;
+        if (!file) {
+            throw std::runtime_error("Cannot open users file");
+        }
         
-        std::stringstream buffer;
-        buffer << file.rdbuf();
+        // Read file content
+        std::string content((std::istreambuf_iterator<char>(file)),
+                           std::istreambuf_iterator<char>());
         
-        if (buffer.str().empty()) {
+        if (content.empty()) {
             return true;  // Empty file is valid for first boot
         }
         
-        std::string decrypted = Encryption::decrypt(buffer.str());
-        std::stringstream ss(decrypted);
-        std::string line;
+        std::string decrypted;
+        try {
+            decrypted = Encryption::decrypt(content);
+        } catch (const std::runtime_error& e) {
+            // Log error or handle specific decryption failures
+            return false;
+        }
+        
+        if (decrypted.empty()) {
+            return true;
+        }
         
         users.clear();
+        std::istringstream ss(decrypted);
+        std::string line;
+        
         while (std::getline(ss, line)) {
+            if (line.empty()) continue;
+            
             std::vector<std::string> parts;
             std::string part;
             std::istringstream lineStream(line);
@@ -188,9 +204,9 @@ bool UserManager::loadUsers() {
                 users.push_back(user);
             }
         }
+        
         return true;
-    }
-    catch (...) {
+    } catch (const std::exception&) {
         return false;
     }
 }

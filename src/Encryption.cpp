@@ -32,8 +32,18 @@ std::string Encryption::encrypt(const std::string& data) {
 }
 
 std::string Encryption::decrypt(const std::string& data) {
-    std::vector<uint8_t> dataVec(data.begin(), data.end());
-    return decryptFromVector(dataVec);
+    try {
+        if (data.empty()) {
+            return "";
+        }
+        if (!isInitialized || masterPassword.empty()) {
+            throw std::runtime_error("Encryption not properly initialized");
+        }
+        std::vector<uint8_t> dataVec(data.begin(), data.end());
+        return decryptFromVector(dataVec);
+    } catch (const std::exception& e) {
+        throw std::runtime_error(std::string("Decryption error: ") + e.what());
+    }
 }
 
 std::vector<uint8_t> Encryption::encryptToVector(const std::string& data) {
@@ -170,9 +180,31 @@ std::vector<uint8_t> Encryption::generateRandomBytes(size_t length) {
 }
 
 bool Encryption::verifyHeader(const std::vector<uint8_t>& data) {
-    if (data.size() < 1 + SALT_LENGTH + IV_LENGTH + TAG_LENGTH) 
+    try {
+        // Strict size validation
+        const size_t MIN_SIZE = 1 + SALT_LENGTH + IV_LENGTH + TAG_LENGTH + 1;
+        if (data.empty()) {
+            throw std::runtime_error("Empty data");
+        }
+        if (data.size() < MIN_SIZE) {
+            throw std::runtime_error("Data size too small");
+        }
+        
+        // Version check
+        if (data[0] != ENCRYPTION_VERSION) {
+            throw std::runtime_error("Unsupported version");
+        }
+        
+        // Validate component sizes
+        size_t expectedSize = 1 + SALT_LENGTH + IV_LENGTH + TAG_LENGTH;
+        if (data.size() <= expectedSize) {
+            throw std::runtime_error("No encrypted content");
+        }
+        
+        return true;
+    } catch (const std::exception& e) {
         return false;
-    return data[0] == ENCRYPTION_VERSION;
+    }
 }
 
 std::string Encryption::generateRandomKey(size_t length) {
