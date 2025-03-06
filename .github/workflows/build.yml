@@ -101,7 +101,7 @@ jobs:
         cp build/bin/* artifact/
 
     - name: Upload artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: ${{ matrix.config.name }}-binaries
         path: artifact/
