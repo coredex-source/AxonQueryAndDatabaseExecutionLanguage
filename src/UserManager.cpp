@@ -14,7 +14,22 @@ bool UserManager::initialize() {
     if (!initialized) {
         try {
             initialized = true;
-            return isFirstBoot() || loadUsers();
+            users.clear();  // Clear any existing users
+            
+            if (isFirstBoot()) {
+                // Set default encryption key for first boot
+                Encryption::setMasterPassword(ENCRYPTION_KEY);
+                return true;
+            }
+
+            // Try loading with default key first
+            Encryption::setMasterPassword(ENCRYPTION_KEY);
+            if (loadUsers()) {
+                return true;
+            }
+
+            // If that fails, we'll let authenticate() try with the user's password
+            return true;
         }
         catch (...) {
             initialized = false;
@@ -31,21 +46,42 @@ bool UserManager::isFirstBoot() {
 bool UserManager::createRootUser(const std::string& password) {
     if (!users.empty()) return false;
     
+    // Set the master password before encrypting user data
+    Encryption::setMasterPassword(ENCRYPTION_KEY);
+    
     User root;
     root.username = "root";
     root.passwordHash = hashPassword(password);
     root.isRoot = true;
     
     users.push_back(root);
-    return saveUsers();
+    bool success = saveUsers();
+    
+    // Set the actual user password for future operations
+    if (success) {
+        Encryption::setMasterPassword(password);
+    }
+    
+    return success;
 }
 
 bool UserManager::authenticate(const std::string& password) {
-    if (users.empty()) return false;
+    // Try loading users with the provided password
+    Encryption::setMasterPassword(password);
+    
+    try {
+        if (!loadUsers()) {
+            return false;
+        }
+    }
+    catch (...) {
+        return false;
+    }
     
     std::string hash = hashPassword(password);
     for (const auto& user : users) {
         if (user.isRoot && user.passwordHash == hash) {
+            // Set master password after successful authentication
             Encryption::setMasterPassword(password);
             return true;
         }
@@ -87,7 +123,13 @@ bool UserManager::saveUsers() {
     try {
         std::stringstream ss;
         for (const auto& user : users) {
-            ss << user.username << "|" << user.passwordHash << "|" << (user.isRoot ? "1" : "0") << "\n";
+            ss << user.username << "|" << user.passwordHash << "|" << (user.isRoot ? "1" : "0");
+            // Add database keys
+            ss << "|" << user.dbKeys.size();
+            for (const auto& [dbName, key] : user.dbKeys) {
+                ss << "|" << dbName << "|" << key;
+            }
+            ss << "\n";
         }
         
         std::string encrypted = Encryption::encrypt(ss.str());
@@ -122,13 +164,27 @@ bool UserManager::loadUsers() {
         
         users.clear();
         while (std::getline(ss, line)) {
-            size_t pos1 = line.find('|');
-            size_t pos2 = line.find('|', pos1 + 1);
-            if (pos1 != std::string::npos && pos2 != std::string::npos) {
+            std::vector<std::string> parts;
+            std::string part;
+            std::istringstream lineStream(line);
+            while (std::getline(lineStream, part, '|')) {
+                parts.push_back(part);
+            }
+
+            if (parts.size() >= 4) {
                 User user;
-                user.username = line.substr(0, pos1);
-                user.passwordHash = line.substr(pos1 + 1, pos2 - pos1 - 1);
-                user.isRoot = (line.substr(pos2 + 1) == "1");
+                user.username = parts[0];
+                user.passwordHash = parts[1];
+                user.isRoot = (parts[2] == "1");
+                
+                // Load database keys
+                int keyCount = std::stoi(parts[3]);
+                for (int i = 0; i < keyCount && (4 + i*2 + 1) < parts.size(); i++) {
+                    std::string dbName = parts[4 + i*2];
+                    std::string dbKey = parts[4 + i*2 + 1];
+                    user.dbKeys[dbName] = dbKey;
+                }
+                
                 users.push_back(user);
             }
         }
@@ -141,4 +197,34 @@ bool UserManager::loadUsers() {
 
 std::string UserManager::getUserFilePath() {
     return (std::filesystem::current_path() / "users.dat").string();
+}
+
+bool UserManager::addDatabaseKey(const std::string& dbName, const std::string& key) {
+    if (users.empty()) return false;
+    
+    // Add key to root user
+    for (auto& user : users) {
+        if (user.isRoot) {
+            user.dbKeys[dbName] = key;
+            return saveUsers();
+        }
+    }
+    return false;
+}
+
+bool UserManager::getDatabaseKey(const std::string& dbName, std::string& key) {
+    if (users.empty()) return false;
+    
+    // Get key from root user
+    for (const auto& user : users) {
+        if (user.isRoot) {
+            auto it = user.dbKeys.find(dbName);
+            if (it != user.dbKeys.end()) {
+                key = it->second;
+                return true;
+            }
+            break;
+        }
+    }
+    return false;
 }

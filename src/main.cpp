@@ -7,8 +7,8 @@
 bool handleFirstBoot() {
     std::cout << "Welcome to first-time setup of " << AQADEL_NAME << std::endl;
     std::cout << "Please set up the root password: ";
-    std::string password;
-    std::getline(std::cin, password);
+    std::string password = CLI::getHiddenInput();
+    std::cout << std::endl;
     
     if (password.empty()) {
         std::cerr << "Password cannot be empty" << std::endl;
@@ -47,14 +47,29 @@ int main(int argc, char** argv) {
         }
     } else {
         std::string password;
-        do {
-            std::cout << "Enter password: ";
-            std::getline(std::cin, password);
+        int attempts = 0;
+        bool authenticated = false;
+
+        while (attempts < MAX_PASSWORD_ATTEMPTS && !authenticated) {
+            std::cout << "Enter password" << (attempts > 0 ? " (" + std::to_string(MAX_PASSWORD_ATTEMPTS - attempts) + " attempts remaining): " : ": ");
+            password = CLI::getHiddenInput();
+            std::cout << std::endl;
             
-            if (!UserManager::authenticate(password)) {
-                std::cout << "Invalid password. Try again." << std::endl;
+            if (UserManager::authenticate(password)) {
+                authenticated = true;
+            } else {
+                attempts++;
+                if (attempts < MAX_PASSWORD_ATTEMPTS) {
+                    std::cout << "Invalid password. Try again." << std::endl;
+                }
             }
-        } while (!UserManager::authenticate(password));
+        }
+
+        if (!authenticated) {
+            std::cout << "Maximum password attempts exceeded. Exiting..." << std::endl;
+            Encryption::cleanup();
+            return 1;
+        }
     }
 
     std::cout << "Welcome to " << AQADEL_NAME << "-" << AQADEL_VERSION << std::endl;

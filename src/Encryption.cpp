@@ -3,6 +3,8 @@
 #include <openssl/rand.h>
 #include <openssl/err.h>
 #include <stdexcept>
+#include <sstream>
+#include <iomanip>
 
 std::string Encryption::masterPassword;
 bool Encryption::isInitialized = false;
@@ -171,4 +173,47 @@ bool Encryption::verifyHeader(const std::vector<uint8_t>& data) {
     if (data.size() < 1 + SALT_LENGTH + IV_LENGTH + TAG_LENGTH) 
         return false;
     return data[0] == ENCRYPTION_VERSION;
+}
+
+std::string Encryption::generateRandomKey(size_t length) {
+    auto bytes = generateRandomBytes(length);
+    std::stringstream ss;
+    for (unsigned char byte : bytes) {
+        ss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(byte);
+    }
+    return ss.str();
+}
+
+std::string Encryption::hashString(const std::string& input) {
+    unsigned char hash[EVP_MAX_MD_SIZE];
+    unsigned int hashLen;
+    
+    EVP_MD_CTX* ctx = EVP_MD_CTX_new();
+    if (!ctx) {
+        throw std::runtime_error("Failed to create hash context");
+    }
+    
+    try {
+        if (1 != EVP_DigestInit_ex(ctx, EVP_sha256(), nullptr) ||
+            1 != EVP_DigestUpdate(ctx, input.c_str(), input.length()) ||
+            1 != EVP_DigestFinal_ex(ctx, hash, &hashLen)) {
+            throw std::runtime_error("Failed to compute hash");
+        }
+        
+        EVP_MD_CTX_free(ctx);
+        
+        std::stringstream ss;
+        for (unsigned int i = 0; i < hashLen; i++) {
+            ss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(hash[i]);
+        }
+        return ss.str();
+    }
+    catch (...) {
+        EVP_MD_CTX_free(ctx);
+        throw;
+    }
+}
+
+std::string Encryption::hashWithSalt(const std::string& input, const std::string& salt) {
+    return hashString(salt + input + salt);
 }

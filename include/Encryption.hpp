@@ -12,6 +12,9 @@ public:
     static std::string encrypt(const std::string& data);
     static std::string decrypt(const std::string& data);
     static void setMasterPassword(const std::string& password);
+    static std::string generateRandomKey(size_t length);
+    static std::string hashString(const std::string& input);
+    static std::string hashWithSalt(const std::string& input, const std::string& salt);
 
 private:
     static std::vector<uint8_t> encryptToVector(const std::string& data);

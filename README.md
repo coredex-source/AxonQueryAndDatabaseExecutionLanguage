@@ -9,6 +9,8 @@
 
 - listDatabases  -  Shows the list of saved/loadable databases.
 
+- defaultDatabase DatabaseName  -  Select a default database to use at boot.
+
 - createTable TableName[ColumnName datatype, ...]  -  Creates a table within a database.
   - Note: for string datatypes: string{length}
 
@@ -16,16 +18,16 @@
 
 - descTable TableName  -  Describes the structure of a table.
 
+- insertValues TableName(Value, ...)  -  Appends a value to a specified table.
+  - Note: for string put the value in "".
+
+- displayTable TableName  -  Displays a specified table.
+
 - exit  -  Exits program while saving all changes.
 
 - help  -  Displays this message.
 
 ## To be available commands -
-
-- insertValues TableName(Value, ...)  -  Appends a value to a specified table.
-  - Note: for string put the value in "".
-
-- displayTable TableName  -  Displays a specified table.
 
 - deleteValue TableName if ColumnName == Value  -  Deletes a value from a specified table.
   - Note: Value should be in "" if string.
