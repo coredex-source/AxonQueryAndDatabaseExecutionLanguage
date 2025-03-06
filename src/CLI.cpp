@@ -10,7 +10,6 @@
 #include <regex>
 #include <map>
 #include <set>
-#include <conio.h>
 #include <random>
 #include <chrono>
 #include "UserManager.hpp"
@@ -891,57 +890,56 @@ bool CLI::loadDefaultDatabase() {
 }
 
 std::string CLI::getHiddenInput() {
-#ifdef _WIN32
-    // Windows implementation
     std::string input;
-    char ch;
-    while ((ch = _getch()) != 13) { // 13 is Enter key
-        if (ch == 8) { // Backspace
+    
+#ifdef _WIN32
+    HANDLE hStdin = GetStdHandle(STD_INPUT_HANDLE);
+    DWORD mode = 0;
+    GetConsoleMode(hStdin, &mode);
+    SetConsoleMode(hStdin, mode & (~ENABLE_ECHO_INPUT));
+
+    int ch;
+    while ((ch = getchar()) != '\n' && ch != '\r') {
+        if (ch == '\b') {  // Backspace
             if (!input.empty()) {
-                std::cout << "\b \b";
+                std::cout << "\b \b" << std::flush;
                 input.pop_back();
             }
         }
-        else if (ch >= 32 && ch <= 126) { // Printable characters
-            input += ch;
-            std::cout << '*';
+        else if (ch >= 32 && ch <= 126) {  // Printable characters
+            input += static_cast<char>(ch);
+            std::cout << '*' << std::flush;
         }
     }
-    return input;
+    std::cout << std::endl;
+    
+    SetConsoleMode(hStdin, mode);
 #else
-    // Unix-like systems implementation
-    std::string password;
-    struct termios old_settings, new_settings;
-    
-    // Get current terminal settings
-    tcgetattr(STDIN_FILENO, &old_settings);
-    new_settings = old_settings;
-    
-    // Disable echo
-    new_settings.c_lflag &= ~(ECHO | ECHOE | ECHOK | ECHONL | ICANON);
-    
-    // Apply new settings
-    tcsetattr(STDIN_FILENO, TCSAFLUSH, &new_settings);
-    
-    // Read password char by char
-    char ch;
-    while (read(STDIN_FILENO, &ch, 1) && ch != '\n') {
-        if (ch == 127 || ch == 8) { // Backspace
-            if (!password.empty()) {
-                std::cout << "\b \b";
-                password.pop_back();
+    termios oldt;
+    tcgetattr(STDIN_FILENO, &oldt);
+    termios newt = oldt;
+    newt.c_lflag &= ~(ECHO | ICANON);
+    tcsetattr(STDIN_FILENO, TCSANOW, &newt);
+
+    int ch;
+    while ((ch = getchar()) != '\n' && ch != EOF) {
+        if (ch == 127 || ch == '\b') {  // Backspace
+            if (!input.empty()) {
+                std::cout << "\b \b" << std::flush;
+                input.pop_back();
             }
         }
-        else if (ch >= 32 && ch <= 126) { // Printable characters
-            password += ch;
-            std::cout << '*';
+        else if (ch >= 32 && ch <= 126) {  // Printable characters
+            input += static_cast<char>(ch);
+            std::cout << '*' << std::flush;
         }
     }
+    std::cout << std::endl;
     
-    // Restore old terminal settings
-    tcsetattr(STDIN_FILENO, TCSAFLUSH, &old_settings);
-    return password;
+    tcsetattr(STDIN_FILENO, TCSANOW, &oldt);
 #endif
+
+    return input;
 }
 
 std::string CLI::getRandomFunFact() {
