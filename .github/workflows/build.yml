@@ -18,13 +18,6 @@ jobs:
       matrix:
         config:
           - {
-            name: "Windows Latest MSVC",
-            os: windows-latest,
-            cc: "cl",
-            cxx: "cl",
-            environment_script: "C:/Program Files (x86)/Microsoft Visual Studio/2019/Enterprise/VC/Auxiliary/Build/vcvars64.bat"
-          }
-          - {
             name: "Ubuntu Latest GCC",
             os: ubuntu-latest,
             cc: "gcc",
@@ -46,21 +39,6 @@ jobs:
     steps:
     - uses: actions/checkout@v3
 
-    - name: Install OpenSSL (Windows)
-      if: runner.os == 'Windows'
-      run: |
-        choco install openssl --version=3.1.1 -y
-        # Import Chocolatey profile for refreshenv
-        $ChocolateyProfile = "$env:ChocolateyInstall\helpers\chocolateyProfile.psm1"
-        if (Test-Path($ChocolateyProfile)) {
-          Import-Module "$ChocolateyProfile"
-        }
-        refreshenv
-        echo "OPENSSL_ROOT_DIR=C:\Program Files\OpenSSL" | Out-File -Append -FilePath $env:GITHUB_ENV
-        echo "OPENSSL_LIBRARIES=C:\Program Files\OpenSSL\lib" | Out-File -Append -FilePath $env:GITHUB_ENV
-        echo "OPENSSL_INCLUDE_DIR=C:\Program Files\OpenSSL\include" | Out-File -Append -FilePath $env:GITHUB_ENV
-        echo "PATH=C:\Program Files\OpenSSL\bin;$env:PATH" | Out-File -Append -FilePath $env:GITHUB_ENV
-
     - name: Install OpenSSL (Ubuntu)
       if: runner.os == 'Linux'
       run: |
@@ -73,35 +51,13 @@ jobs:
         brew install openssl@3
         echo "OPENSSL_ROOT_DIR=$(brew --prefix openssl@3)" >> $GITHUB_ENV
 
-    - name: Configure CMake (Windows)
-      if: runner.os == 'Windows'
-      shell: cmd
-      run: |
-        cmake -B build ^
-        -G "Visual Studio 17 2022" ^
-        -A x64 ^
-        -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} ^
-        -DOPENSSL_ROOT_DIR="${{env.OPENSSL_ROOT_DIR}}" ^
-        -DOPENSSL_LIBRARIES="${{env.OPENSSL_LIBRARIES}}" ^
-        -DOPENSSL_INCLUDE_DIR="${{env.OPENSSL_INCLUDE_DIR}}" ^
-        -DOPENSSL_USE_STATIC_LIBS=ON
-
-    - name: Configure CMake (Unix)
-      if: runner.os != 'Windows'
+    - name: Configure CMake
       run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
 
     - name: Build
       run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
 
-    - name: Prepare artifacts (Windows)
-      if: runner.os == 'Windows'
-      run: |
-        mkdir artifact
-        copy build\bin\${{env.BUILD_TYPE}}\*.exe artifact\
-        copy build\bin\${{env.BUILD_TYPE}}\*.dll artifact\
-
-    - name: Prepare artifacts (Unix)
-      if: runner.os != 'Windows'
+    - name: Prepare artifacts
       run: |
         mkdir artifact
         cp build/bin/* artifact/

@@ -327,8 +327,7 @@ bool CLI::createTable(const std::string& command) {
 }
 
 void CLI::writeTableToDatabase(const std::string& tableName, const std::vector<Column>& columns) {
-    std::filesystem::path dbPath(std::filesystem::current_path());
-    dbPath /= (currentDatabase + AQADEL_DB_EXT);
+    std::filesystem::path dbPath = std::filesystem::current_path() / (currentDatabase + AQADEL_DB_EXT);
     
     // Read and decrypt existing content
     std::string fileContent = readAndVerifyDatabaseContent(dbPath);
@@ -404,8 +403,7 @@ std::string CLI::getDecryptedContent(const std::filesystem::path& dbPath) {
 
 bool CLI::tableExists(const std::string& tableName) {
     try {
-        std::filesystem::path dbPath{std::filesystem::current_path()};
-        dbPath /= (currentDatabase + AQADEL_DB_EXT);
+        std::filesystem::path dbPath = std::filesystem::current_path() / (currentDatabase + AQADEL_DB_EXT);
         std::string decrypted = getDecryptedContent(dbPath);
         
         std::istringstream iss(decrypted);
@@ -491,10 +489,7 @@ bool CLI::parseColumns(const std::string& columnStr, std::vector<Column>& column
 
 void CLI::listTables() {
     try {
-        // Fix the filesystem path construction
-        std::filesystem::path dbPath{std::filesystem::current_path()};  // Use {} instead of ()
-        dbPath /= (currentDatabase + AQADEL_DB_EXT);
-
+        std::filesystem::path dbPath = std::filesystem::current_path() / (currentDatabase + AQADEL_DB_EXT);
         std::ifstream dbFile(dbPath, std::ios::binary);
         if (!dbFile) {
             throw std::runtime_error("Cannot open database file");
@@ -961,8 +956,7 @@ void CLI::displayTable(const std::string& tableName) {
 }
 
 bool CLI::setDefaultDatabase(const std::string& name) {
-    std::filesystem::path dbPath(std::filesystem::current_path());
-    dbPath /= (name + AQADEL_DB_EXT);
+    std::filesystem::path dbPath = std::filesystem::current_path() / (name + AQADEL_DB_EXT);
     
     if (!std::filesystem::exists(dbPath)) {
         std::cout << "Error: Database '" << name << "' does not exist" << std::endl;
@@ -971,17 +965,9 @@ bool CLI::setDefaultDatabase(const std::string& name) {
 
     try {
         std::ofstream configFile(DEFAULT_DB_FILE);
-        if (!configFile.is_open()) {
-            throw std::runtime_error("Cannot open config file");
-        }
         configFile << "defaultDatabase = " << name << std::endl;
-        bool success = !configFile.fail();
-        configFile.close();
-        
-        if (success) {
-            std::cout << "Set '" << name << "' as default database" << std::endl;
-        }
-        return success;
+        std::cout << "Set '" << name << "' as default database" << std::endl;
+        return true;
     }
     catch (const std::exception& e) {
         std::cout << "Error setting default database: " << e.what() << std::endl;
@@ -994,18 +980,18 @@ bool CLI::loadDefaultDatabase() {
         if (std::filesystem::exists(DEFAULT_DB_FILE)) {
             std::ifstream configFile(DEFAULT_DB_FILE);
             std::string line;
-            if (configFile && std::getline(configFile, line)) {  // Fix nodiscard warning
-                size_t pos = line.find("=");
-                if (pos != std::string::npos) {
-                    std::string defaultDB = line.substr(pos + 1);
-                    // Trim whitespace
-                    defaultDB.erase(0, defaultDB.find_first_not_of(" \t"));
-                    defaultDB.erase(defaultDB.find_last_not_of(" \t") + 1);
-                    
-                    if (!defaultDB.empty() && std::filesystem::exists(defaultDB + AQADEL_DB_EXT)) {
-                        useDatabase(defaultDB);
-                        return true;
-                    }
+            std::getline(configFile, line);
+            
+            size_t pos = line.find("=");
+            if (pos != std::string::npos) {
+                std::string defaultDB = line.substr(pos + 1);
+                // Trim whitespace
+                defaultDB.erase(0, defaultDB.find_first_not_of(" \t"));
+                defaultDB.erase(defaultDB.find_last_not_of(" \t") + 1);
+                
+                if (!defaultDB.empty() && std::filesystem::exists(defaultDB + AQADEL_DB_EXT)) {
+                    useDatabase(defaultDB);
+                    return true;
                 }
             }
         }
@@ -1087,12 +1073,9 @@ std::string CLI::getRandomFunFact() {
         return "Goodbye!";
     }
 
-    unsigned int seed = static_cast<unsigned int>(
-        std::chrono::system_clock::now().time_since_epoch().count()
-    );
+    unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
     std::default_random_engine generator(seed);
-    int maxIdx = static_cast<int>(funFacts.size() - 1);
-    std::uniform_int_distribution<int> distribution(0, maxIdx);
+    std::uniform_int_distribution<int> distribution(0, funFacts.size() - 1);
     
     return "Fun fact: " + funFacts[distribution(generator)];
 }
