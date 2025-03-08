@@ -26,7 +26,7 @@
 - deleteValue TableName if ColumnName == Value  -  Deletes a value from a specified table.
   - Note: Value should be in "" if string.
 
-- exit  -  Exits program while saving all changes.
+- exit  -  Exits the program.
 
 - help  -  Displays this message.
 
@@ -42,17 +42,9 @@
 - editValue TableName set ColumnName = NewValue if ColumnName == Value  -  Edit the value of a specified column in a specified table.
   - Note: Value and NewValue should be in "" if string.
 
-- loadDatabase DatabaseName  -  Manually load a specific saved database.
+- openSafeBlock | openTransaction | openChannel | osb -  let's user run quaries without permanently saving database until close query is executed (closeSafeBlock | closeTransaction | closeChannel | csb).
 
-- unloadDatabase DatabaseName  -  Unloads a database from memory.
-
-- loadAllDatabases  -  Manually load all saved databases.
-
-- toggleLoadDatabase  -  Toggles automatic loading at boot of databases. || Alais - TLD
-
-- commitAll  -  Saves all changes done till now permanently.
-
-- exit --no-save  -  Exits program while discarding all changes.
+- closeSafeBlock | closeTransaction | closeChannel | csb -  Saves all changes done in a safe block and closes the safe block.
 
 ## Building on windows -
   - Requirements:
@@ -61,4 +53,4 @@
       - Windows 10 or above
   - run Build.bat file to build the executable.
 
-- Pre-compiled binaries should be available in the actions tab.
+- Pre-compiled binaries for linux and macOS should be available in the actions tab.
