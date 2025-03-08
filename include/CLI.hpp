@@ -3,7 +3,6 @@
 #include <vector>
 #include <filesystem>
 
-// Remove conio.h dependency
 #ifdef _WIN32
 #include <windows.h>
 #else
@@ -19,7 +18,7 @@ struct Column {
 
 class CLI {
 public:
-    CLI();  // Changed from default
+    CLI();
     void start();
     static std::string getHiddenInput();
 private:
@@ -43,9 +42,10 @@ private:
     bool loadDefaultDatabase();
     std::string resolveCommandAlias(const std::string& cmd);
     std::string getRandomFunFact();
-    // Add new helper methods
     std::string readAndVerifyDatabaseContent(const std::filesystem::path& dbPath);
     std::string extractEncryptedContent(const std::string& fileContent);
     std::string getDecryptedContent(const std::filesystem::path& dbPath);
     bool deleteValues(const std::string& command);
+    bool deleteTable(const std::string& tableName);
+    bool deleteDatabase(const std::string& dbName);
 };

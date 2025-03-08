@@ -51,10 +51,12 @@ bool CLI::processCommand(const std::string& command) {
         std::cout << "  useDatabase|useDB <name> - Switch to an existing database" << std::endl;
         std::cout << "  listDatabases|listDBs - Show all available databases" << std::endl;
         std::cout << "  defaultDatabase|defaultDB <name> - Set default database for startup" << std::endl;
+        std::cout << "  deleteDatabase|deleteDB <name> - Delete an existing database" << std::endl;
         std::cout << "  listTables - Show all tables in current database" << std::endl;
         std::cout << "  descTable <name> - Describe the structure of a table" << std::endl;
         std::cout << "  createTable TableName[col1 type, col2 type, ...] - Create a new table" << std::endl;
         std::cout << "    Supported types: int, float, bool, string{length}" << std::endl;
+        std::cout << "  deleteTable <name> - Delete a table from current database" << std::endl;
         std::cout << "  insertValues TableName(value1, value2, ...) - Insert values into table" << std::endl;
         std::cout << "  displayTable <name> - Display all values in table" << std::endl;
         std::cout << "  deleteValue TableName if ColumnName == Value - Delete rows where condition is met" << std::endl;
@@ -150,6 +152,28 @@ bool CLI::processCommand(const std::string& command) {
             deleteValues(deleteCommand);
         }
     }
+    else if (cmd == "deleteTable") {
+        if (currentDatabase.empty()) {
+            std::cout << "Error: No database selected. Use 'useDatabase' first." << std::endl;
+        } else {
+            std::string tableName;
+            iss >> tableName;
+            if (tableName.empty()) {
+                std::cout << "Error: Table name is required" << std::endl;
+            } else {
+                deleteTable(tableName);
+            }
+        }
+    }
+    else if (cmd == "deleteDatabase") {
+        std::string dbName;
+        iss >> dbName;
+        if (dbName.empty()) {
+            std::cout << "Error: Database name is required" << std::endl;
+        } else {
+            deleteDatabase(dbName);
+        }
+    }
     else if (!command.empty()) {
         std::cout << "Unknown command. Type 'help' for available commands." << std::endl;
     }
@@ -161,7 +185,8 @@ std::string CLI::resolveCommandAlias(const std::string& cmd) {
         {"createDB", "createDatabase"},
         {"useDB", "useDatabase"},
         {"listDBs", "listDatabases"},
-        {"defaultDB", "defaultDatabase"}
+        {"defaultDB", "defaultDatabase"},
+        {"deleteDB", "deleteDatabase"}
     };
 
     auto it = aliases.find(cmd);
@@ -1219,6 +1244,146 @@ bool CLI::deleteValues(const std::string& command) {
     }
     catch (const std::exception& e) {
         std::cout << "Error: Failed to delete values - " << e.what() << std::endl;
+        return false;
+    }
+}
+
+bool CLI::deleteTable(const std::string& tableName) {
+    if (!tableExists(tableName)) {
+        std::cout << "Error: Table '" << tableName << "' does not exist" << std::endl;
+        return false;
+    }
+    
+    try {
+        // Get database content
+        std::filesystem::path dbPath = std::filesystem::current_path() / (currentDatabase + AQADEL_DB_EXT);
+        std::string fileContent = readAndVerifyDatabaseContent(dbPath);
+        std::string encryptedContent = extractEncryptedContent(fileContent);
+        std::string decrypted = Encryption::decrypt(encryptedContent);
+        
+        // Process the content to remove the table
+        std::istringstream iss(decrypted);
+        std::ostringstream oss;
+        std::string line;
+        bool inTargetTable = false;
+        
+        while (std::getline(iss, line)) {
+            if (line.substr(0, 6) == "TABLE ") {
+                std::string currentTable = line.substr(6);
+                currentTable.erase(0, currentTable.find_first_not_of(" \t"));
+                currentTable.erase(currentTable.find_last_not_of(" \t") + 1);
+                
+                if (currentTable == tableName) {
+                    inTargetTable = true;
+                    // Don't write this line - start skipping
+                    continue;
+                } else {
+                    inTargetTable = false;
+                }
+            }
+            
+            if (inTargetTable) {
+                // Skip all lines until END_TABLE
+                if (line == "END_TABLE") {
+                    inTargetTable = false;
+                    continue; // Skip the END_TABLE line too
+                }
+            } else {
+                // Write all lines that are not part of the target table
+                oss << line << "\n";
+            }
+        }
+        
+        // Encrypt and write back to file
+        std::string newContent = oss.str();
+        std::string encrypted = Encryption::encrypt(newContent);
+        
+        // Add integrity marker
+        std::string integrity = Encryption::hashString(encrypted);
+        std::string finalContent = std::string(DB_INTEGRITY_MARKER) + integrity + "\n" + encrypted;
+        
+        std::ofstream outFile(dbPath, std::ios::binary | std::ios::trunc);
+        outFile.write(finalContent.c_str(), finalContent.length());
+        
+        std::cout << "Table '" << tableName << "' deleted successfully" << std::endl;
+        return true;
+    }
+    catch (const std::exception& e) {
+        std::cout << "Error: Failed to delete table - " << e.what() << std::endl;
+        return false;
+    }
+}
+
+bool CLI::deleteDatabase(const std::string& dbName) {
+    std::filesystem::path dbPath = std::filesystem::current_path() / (dbName + AQADEL_DB_EXT);
+    
+    if (!std::filesystem::exists(dbPath)) {
+        std::cout << "Error: Database '" << dbName << "' does not exist" << std::endl;
+        return false;
+    }
+    
+    // Check if trying to delete current database
+    if (dbName == currentDatabase) {
+        std::cout << "Warning: Cannot delete the database you're currently using." << std::endl;
+        std::string confirm;
+        std::cout << "Are you sure you want to continue? This will disconnect you. (y/n): ";
+        std::getline(std::cin, confirm);
+        
+        if (confirm != "y" && confirm != "Y") {
+            std::cout << "Database deletion cancelled" << std::endl;
+            return false;
+        }
+    } else {
+        // If not the current database, ask for confirmation anyway
+        std::string confirm;
+        std::cout << "Are you sure you want to delete database '" << dbName << "'? (y/n): ";
+        std::getline(std::cin, confirm);
+        
+        if (confirm != "y" && confirm != "Y") {
+            std::cout << "Database deletion cancelled" << std::endl;
+            return false;
+        }
+    }
+    
+    try {
+        // Try to delete the file
+        if (!std::filesystem::remove(dbPath)) {
+            std::cout << "Error: Failed to delete database file" << std::endl;
+            return false;
+        }
+        
+        // If deleted current database, clear the current database variable
+        if (dbName == currentDatabase) {
+            currentDatabase = "";
+            std::cout << "Disconnected from deleted database" << std::endl;
+        }
+        
+        // Check if this was the default database
+        if (std::filesystem::exists(DEFAULT_DB_FILE)) {
+            std::ifstream configFile(DEFAULT_DB_FILE);
+            std::string line;
+            std::getline(configFile, line);
+            configFile.close();
+            
+            size_t pos = line.find("=");
+            if (pos != std::string::npos) {
+                std::string defaultDB = line.substr(pos + 1);
+                defaultDB.erase(0, defaultDB.find_first_not_of(" \t"));
+                defaultDB.erase(defaultDB.find_last_not_of(" \t") + 1);
+                
+                if (defaultDB == dbName) {
+                    // Remove or update the default database file
+                    std::filesystem::remove(DEFAULT_DB_FILE);
+                    std::cout << "Default database configuration updated" << std::endl;
+                }
+            }
+        }
+        
+        std::cout << "Database '" << dbName << "' deleted successfully" << std::endl;
+        return true;
+    }
+    catch (const std::exception& e) {
+        std::cout << "Error: Failed to delete database - " << e.what() << std::endl;
         return false;
     }
 }
