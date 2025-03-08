@@ -23,14 +23,14 @@
 
 - displayTable TableName  -  Displays a specified table.
 
+- deleteValue TableName if ColumnName == Value  -  Deletes a value from a specified table.
+  - Note: Value should be in "" if string.
+
 - exit  -  Exits program while saving all changes.
 
 - help  -  Displays this message.
 
 ## To be available commands -
-
-- deleteValue TableName if ColumnName == Value  -  Deletes a value from a specified table.
-  - Note: Value should be in "" if string.
 
 - editTable TableName addColumn/removeColumn ColumnName Datatype  -  Adds or removes a column in a specified table.
   - Note: Datatype required only when adding.

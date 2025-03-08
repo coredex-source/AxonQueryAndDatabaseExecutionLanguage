@@ -57,6 +57,8 @@ bool CLI::processCommand(const std::string& command) {
         std::cout << "    Supported types: int, float, bool, string{length}" << std::endl;
         std::cout << "  insertValues TableName(value1, value2, ...) - Insert values into table" << std::endl;
         std::cout << "  displayTable <name> - Display all values in table" << std::endl;
+        std::cout << "  deleteValue TableName if ColumnName == Value - Delete rows where condition is met" << std::endl;
+        std::cout << "    Note: Value should be in quotes if string" << std::endl;
     }
     else if (cmd == "createDatabase") {
         std::string dbName;
@@ -137,6 +139,15 @@ bool CLI::processCommand(const std::string& command) {
             } else {
                 displayTable(tableName);
             }
+        }
+    }
+    else if (cmd == "deleteValue") {
+        if (currentDatabase.empty()) {
+            std::cout << "Error: No database selected. Use 'useDatabase' first." << std::endl;
+        } else {
+            std::string deleteCommand;
+            std::getline(iss, deleteCommand);
+            deleteValues(deleteCommand);
         }
     }
     else if (!command.empty()) {
@@ -1078,4 +1089,136 @@ std::string CLI::getRandomFunFact() {
     std::uniform_int_distribution<int> distribution(0, funFacts.size() - 1);
     
     return "Fun fact: " + funFacts[distribution(generator)];
+}
+
+bool CLI::deleteValues(const std::string& command) {
+    // Parse command: TableName if ColumnName == Value
+    std::regex pattern(R"(\s*(\S+)\s+if\s+(\S+)\s*==\s*(.+))");
+    std::smatch matches;
+    
+    if (!std::regex_search(command, matches, pattern) || matches.size() < 4) {
+        std::cout << "Error: Invalid delete syntax. Use 'deleteValue TableName if ColumnName == Value'" << std::endl;
+        return false;
+    }
+    
+    std::string tableName = matches[1].str();
+    std::string columnName = matches[2].str();
+    std::string valueStr = matches[3].str();
+    
+    // Trim whitespace
+    valueStr.erase(0, valueStr.find_first_not_of(" \t"));
+    valueStr.erase(valueStr.find_last_not_of(" \t") + 1);
+    
+    // Parse quoted strings
+    std::string parsedValue;
+    parseValue(valueStr, parsedValue);
+    
+    if (!tableExists(tableName)) {
+        std::cout << "Error: Table '" << tableName << "' does not exist" << std::endl;
+        return false;
+    }
+    
+    // Get table structure
+    std::vector<Column> columns = getTableColumns(tableName);
+    
+    // Find the column index
+    int columnIndex = -1;
+    for (size_t i = 0; i < columns.size(); i++) {
+        if (columns[i].name == columnName) {
+            columnIndex = static_cast<int>(i);
+            break;
+        }
+    }
+    
+    if (columnIndex == -1) {
+        std::cout << "Error: Column '" << columnName << "' does not exist in table '" << tableName << "'" << std::endl;
+        return false;
+    }
+    
+    // Validate that the value matches the column type
+    if (!validateValue(parsedValue, columns[columnIndex])) {
+        std::cout << "Error: Value '" << valueStr << "' is not valid for column '" 
+                 << columnName << "' with type '" << columns[columnIndex].dataType << "'" << std::endl;
+        return false;
+    }
+    
+    try {
+        // Read existing database content
+        std::filesystem::path dbPath = std::filesystem::current_path() / (currentDatabase + AQADEL_DB_EXT);
+        std::string fileContent = readAndVerifyDatabaseContent(dbPath);
+        std::string encryptedContent = extractEncryptedContent(fileContent);
+        std::string decrypted = Encryption::decrypt(encryptedContent);
+        
+        // Process the content and filter out rows to delete
+        std::istringstream iss(decrypted);
+        std::ostringstream oss;
+        std::string line;
+        bool inTargetTable = false;
+        bool dataStartFound = false;
+        bool dataEndFound = false;
+        int rowsDeleted = 0;
+        std::vector<std::string> keptRows;
+        
+        while (std::getline(iss, line)) {
+            if (line.substr(0, 6) == "TABLE " && line.substr(6) == tableName) {
+                inTargetTable = true;
+                oss << line << "\n";
+            }
+            else if (inTargetTable && line == TABLE_DATA_START) {
+                dataStartFound = true;
+                oss << line << "\n";
+            }
+            else if (inTargetTable && line == TABLE_DATA_END) {
+                // Add all kept rows before DATA_END
+                for (const auto& keptRow : keptRows) {
+                    oss << keptRow << "\n";
+                }
+                oss << line << "\n";
+                dataEndFound = true;
+                inTargetTable = false;
+            }
+            else if (inTargetTable && dataStartFound && !dataEndFound) {
+                // Process data row
+                std::string rowValue;
+                std::istringstream rowStream(line);
+                std::vector<std::string> rowValues;
+                
+                // Split row values by separator
+                while (std::getline(rowStream, rowValue, *ROW_SEPARATOR)) {
+                    rowValues.push_back(rowValue);
+                }
+                
+                // Check if this row should be deleted
+                if (columnIndex < static_cast<int>(rowValues.size()) && 
+                    rowValues[columnIndex] == parsedValue) {
+                    // Skip this row (delete it)
+                    rowsDeleted++;
+                } else {
+                    // Keep this row
+                    keptRows.push_back(line);
+                }
+            }
+            else {
+                oss << line << "\n";
+            }
+        }
+        
+        // Encrypt and write back to file
+        std::string newContent = oss.str();
+        std::string encrypted = Encryption::encrypt(newContent);
+        
+        // Add integrity marker
+        std::string integrity = Encryption::hashString(encrypted);
+        std::string finalContent = std::string(DB_INTEGRITY_MARKER) + integrity + "\n" + encrypted;
+        
+        std::ofstream outFile(dbPath, std::ios::binary | std::ios::trunc);
+        outFile.write(finalContent.c_str(), finalContent.length());
+        
+        std::cout << "Deleted " << rowsDeleted << " row(s) from table '" << tableName << "'" << std::endl;
+        return true;
+    }
+    catch (const std::exception& e) {
+        std::cout << "Error: Failed to delete values - " << e.what() << std::endl;
+        return false;
+    }
 }

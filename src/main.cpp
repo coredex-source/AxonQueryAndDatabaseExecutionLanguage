@@ -15,7 +15,8 @@ bool handleFirstBoot() {
         return false;
     }
     
-    Encryption::setMasterPassword(ENCRYPTION_KEY);
+    // Use the real password directly instead of ENCRYPTION_KEY
+    Encryption::setMasterPassword(password);
     if (!UserManager::createRootUser(password)) {
         std::cerr << "Failed to create root user" << std::endl;
         return false;
@@ -31,7 +32,7 @@ int main(int /*argc*/, char** /*argv*/) {
         return 1;
     }
 
-    // Set default encryption key for initial operations
+    // Initialize with default key first for system operations
     Encryption::setMasterPassword(ENCRYPTION_KEY);
 
     // Now initialize user system

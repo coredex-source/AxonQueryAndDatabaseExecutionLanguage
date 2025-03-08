@@ -47,7 +47,7 @@ bool UserManager::createRootUser(const std::string& password) {
     if (!users.empty()) return false;
     
     // Set the master password before encrypting user data
-    Encryption::setMasterPassword(ENCRYPTION_KEY);
+    Encryption::setMasterPassword(password);  // Changed from ENCRYPTION_KEY to password
     
     User root;
     root.username = "root";
@@ -71,7 +71,11 @@ bool UserManager::authenticate(const std::string& password) {
     
     try {
         if (!loadUsers()) {
-            return false;
+            // If we can't load users with provided password, try default key
+            Encryption::setMasterPassword(ENCRYPTION_KEY);
+            if (!loadUsers()) {
+                return false;
+            }
         }
     }
     catch (...) {
@@ -164,8 +168,8 @@ bool UserManager::loadUsers() {
         std::string decrypted;
         try {
             decrypted = Encryption::decrypt(content);
-        } catch (const std::runtime_error& e) {
-            // Log error or handle specific decryption failures
+        } catch (const std::runtime_error&) {
+            // Decryption failed with current key, return false
             return false;
         }
         

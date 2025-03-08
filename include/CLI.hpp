@@ -47,4 +47,5 @@ private:
     std::string readAndVerifyDatabaseContent(const std::filesystem::path& dbPath);
     std::string extractEncryptedContent(const std::string& fileContent);
     std::string getDecryptedContent(const std::filesystem::path& dbPath);
+    bool deleteValues(const std::string& command);
 };
