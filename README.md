@@ -31,6 +31,9 @@
 - deleteValue TableName if ColumnName == Value  -  Deletes a value from a specified table.
   - Note: Value should be in "" if string.
 
+- editValue TableName set ColumnName = NewValue if ColumnName == Value  -  Edit the value of a specified column in a specified table.
+  - Note: Value and NewValue should be in "" if string.
+
 - deleteTable TableName  -  Deletes a table.
 
 - exit  -  Exits the program.
@@ -38,9 +41,6 @@
 - help  -  Displays this message.
 
 ## To be available commands -
-
-- editValue TableName set ColumnName = NewValue if ColumnName == Value  -  Edit the value of a specified column in a specified table.
-  - Note: Value and NewValue should be in "" if string.
 
 - openSafeBlock | openTransaction | openChannel | osb  -  let's user run quaries without permanently saving database until close query is executed (closeSafeBlock | closeTransaction | closeChannel | csb).
 
@@ -54,5 +54,58 @@
       - MinGW
       - Windows 10 or above
   - run Build.bat file to build the executable.
+
+## Building on Linux - 
+  - Requirements:
+      - OpenSSL development libraries
+      - GCC or Clang compiler
+      - Make
+  - Install dependencies:
+    ```bash
+    # Debian/Ubuntu
+    sudo apt-get install build-essential libssl-dev
+    # Fedora
+    sudo dnf install gcc-c++ openssl-devel make
+    # Arch Linux
+    sudo pacman -S base-devel openssl
+    ```
+  - Build the project:
+    ```bash
+    # From project root directory
+    mkdir build
+    cd build
+    cmake ..
+    make
+    ```
+  - Run the executable:
+    ```bash
+    ./aqadel
+    ```
+
+## Building on macOS -
+  - Requirements:
+      - OpenSSL (via Homebrew)
+      - Clang (installed with Xcode Command Line Tools)
+      - CMake
+  - Install dependencies:
+    ```bash
+    # Install Homebrew if not already installed
+    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install.sh)"
+    
+    # Install OpenSSL and CMake
+    brew install openssl cmake
+    ```
+  - Build the project:
+    ```bash
+    # From project root directory
+    mkdir build
+    cd build
+    cmake .. -DOPENSSL_ROOT_DIR=$(brew --prefix openssl)
+    make
+    ```
+  - Run the executable:
+    ```bash
+    ./aqadel
+    ```
 
 - Pre-compiled binaries for linux and macOS should be available in the actions tab.

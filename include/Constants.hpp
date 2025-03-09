@@ -1,7 +1,7 @@
 #pragma once
 
 #define AQADEL_NAME "AQADEL"
-#define AQADEL_VERSION "CPP-v1.0-a10"
+#define AQADEL_VERSION "CPP-v1.0"
 #define AQADEL_DB_EXT ".aqadb"
 
 // Data type identifiers
