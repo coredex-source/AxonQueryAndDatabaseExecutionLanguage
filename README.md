@@ -11,6 +11,8 @@
 
 - defaultDatabase DatabaseName  -  Select a default database to use at boot.
 
+- deleteDatabase DatabaseName  -  Deletes a database.
+
 - createTable TableName[ColumnName datatype, ...]  -  Creates a table within a database.
   - Note: for string datatypes: string{length}
 
@@ -23,8 +25,13 @@
 
 - displayTable TableName  -  Displays a specified table.
 
+- editTable TableName addColumn/removeColumn ColumnName Datatype  -  Adds or removes a column in a specified table.
+  - Note: Datatype required only when adding.
+
 - deleteValue TableName if ColumnName == Value  -  Deletes a value from a specified table.
   - Note: Value should be in "" if string.
+
+- deleteTable TableName  -  Deletes a table.
 
 - exit  -  Exits the program.
 
@@ -32,19 +39,14 @@
 
 ## To be available commands -
 
-- editTable TableName addColumn/removeColumn ColumnName Datatype  -  Adds or removes a column in a specified table.
-  - Note: Datatype required only when adding.
-
-- deleteTable TableName  -  Deletes a table.
-
-- deleteDatabase DatabaseName  -  Deletes a database.
-
 - editValue TableName set ColumnName = NewValue if ColumnName == Value  -  Edit the value of a specified column in a specified table.
   - Note: Value and NewValue should be in "" if string.
 
-- openSafeBlock | openTransaction | openChannel | osb -  let's user run quaries without permanently saving database until close query is executed (closeSafeBlock | closeTransaction | closeChannel | csb).
+- openSafeBlock | openTransaction | openChannel | osb  -  let's user run quaries without permanently saving database until close query is executed (closeSafeBlock | closeTransaction | closeChannel | csb).
 
-- closeSafeBlock | closeTransaction | closeChannel | csb -  Saves all changes done in a safe block and closes the safe block.
+- discardSafeBlock | discardTransaction | discardChannel | dsb  -  Discards all changes done in a safe block and closes the safe block. 
+
+- closeSafeBlock | closeTransaction | closeChannel | csb  -  Saves all changes done in a safe block and closes the safe block.
 
 ## Building on windows -
   - Requirements:

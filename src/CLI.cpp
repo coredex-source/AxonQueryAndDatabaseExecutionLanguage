@@ -57,6 +57,8 @@ bool CLI::processCommand(const std::string& command) {
         std::cout << "  createTable TableName[col1 type, col2 type, ...] - Create a new table" << std::endl;
         std::cout << "    Supported types: int, float, bool, string{length}" << std::endl;
         std::cout << "  deleteTable <name> - Delete a table from current database" << std::endl;
+        std::cout << "  editTable TableName addColumn/removeColumn ColumnName [DataType] - Modify table structure" << std::endl;
+        std::cout << "    Note: DataType required only when adding columns (e.g., int, float, bool, string{length})" << std::endl;
         std::cout << "  insertValues TableName(value1, value2, ...) - Insert values into table" << std::endl;
         std::cout << "  displayTable <name> - Display all values in table" << std::endl;
         std::cout << "  deleteValue TableName if ColumnName == Value - Delete rows where condition is met" << std::endl;
@@ -172,6 +174,15 @@ bool CLI::processCommand(const std::string& command) {
             std::cout << "Error: Database name is required" << std::endl;
         } else {
             deleteDatabase(dbName);
+        }
+    }
+    else if (cmd == "editTable") {
+        if (currentDatabase.empty()) {
+            std::cout << "Error: No database selected. Use 'useDatabase' first." << std::endl;
+        } else {
+            std::string editCommand;
+            std::getline(iss, editCommand);
+            editTable(editCommand);
         }
     }
     else if (!command.empty()) {
@@ -1386,4 +1397,298 @@ bool CLI::deleteDatabase(const std::string& dbName) {
         std::cout << "Error: Failed to delete database - " << e.what() << std::endl;
         return false;
     }
+}
+
+bool CLI::editTable(const std::string& command) {
+    // Parse command parameters: TableName addColumn/removeColumn ColumnName [DataType]
+    std::istringstream iss(command);
+    std::string tableName, operation, columnName, dataType;
+    
+    iss >> tableName >> operation >> columnName;
+    
+    // Remove leading/trailing whitespace
+    tableName.erase(0, tableName.find_first_not_of(" \t"));
+    tableName.erase(tableName.find_last_not_of(" \t") + 1);
+    operation.erase(0, operation.find_first_not_of(" \t"));
+    operation.erase(operation.find_last_not_of(" \t") + 1);
+    columnName.erase(0, columnName.find_first_not_of(" \t"));
+    columnName.erase(columnName.find_last_not_of(" \t") + 1);
+    
+    // Validate parameters
+    if (tableName.empty() || operation.empty() || columnName.empty()) {
+        std::cout << "Error: Invalid command syntax. Use 'editTable TableName addColumn/removeColumn ColumnName [DataType]'" << std::endl;
+        return false;
+    }
+    
+    // Check if table exists
+    if (!tableExists(tableName)) {
+        std::cout << "Error: Table '" << tableName << "' does not exist" << std::endl;
+        return false;
+    }
+    
+    // Get existing table structure
+    std::vector<Column> columns = getTableColumns(tableName);
+    
+    if (operation == "addColumn") {
+        // For addColumn, we need a data type
+        iss >> dataType;
+        dataType.erase(0, dataType.find_first_not_of(" \t"));
+        dataType.erase(dataType.find_last_not_of(" \t") + 1);
+        
+        if (dataType.empty()) {
+            std::cout << "Error: Data type is required when adding a column" << std::endl;
+            return false;
+        }
+        
+        // Check if column already exists
+        for (const auto& col : columns) {
+            if (col.name == columnName) {
+                std::cout << "Error: Column '" << columnName << "' already exists in table '" << tableName << "'" << std::endl;
+                return false;
+            }
+        }
+        
+        // Parse the data type (handle string with length)
+        Column newColumn;
+        newColumn.name = columnName;
+        
+        if (dataType.substr(0, 6) == DT_STRING) {
+            newColumn.dataType = DT_STRING;
+            size_t openBrace = dataType.find('{');
+            size_t closeBrace = dataType.find('}');
+            
+            if (openBrace != std::string::npos && closeBrace != std::string::npos) {
+                try {
+                    newColumn.stringLength = std::stoi(dataType.substr(openBrace + 1, closeBrace - openBrace - 1));
+                }
+                catch (...) {
+                    std::cout << "Error: Invalid string length for column '" << columnName << "'" << std::endl;
+                    return false;
+                }
+            }
+            else {
+                std::cout << "Error: String type requires length specification {n}" << std::endl;
+                return false;
+            }
+        }
+        else if (dataType == DT_INT || dataType == DT_FLOAT || dataType == DT_BOOL) {
+            newColumn.dataType = dataType;
+            newColumn.stringLength = 0;
+        }
+        else {
+            std::cout << "Error: Unknown data type: " << dataType << std::endl;
+            return false;
+        }
+        
+        // Add the new column to the table structure
+        try {
+            // Read database content
+            std::filesystem::path dbPath = std::filesystem::current_path() / (currentDatabase + AQADEL_DB_EXT);
+            std::string fileContent = readAndVerifyDatabaseContent(dbPath);
+            std::string encryptedContent = extractEncryptedContent(fileContent);
+            std::string decrypted = Encryption::decrypt(encryptedContent);
+            
+            // Process and update the content
+            std::istringstream contentStream(decrypted);
+            std::ostringstream newContentStream;
+            std::string line;
+            bool inTargetTable = false;
+            bool inDataSection = false;
+            std::vector<std::string> dataRows;
+            
+            while (std::getline(contentStream, line)) {
+                if (line.substr(0, 6) == "TABLE ") {
+                    std::string currentTable = line.substr(6);
+                    currentTable.erase(0, currentTable.find_first_not_of(" \t"));
+                    currentTable.erase(currentTable.find_last_not_of(" \t") + 1);
+                    
+                    if (currentTable == tableName) {
+                        inTargetTable = true;
+                        newContentStream << line << "\n";
+                    } else {
+                        inTargetTable = false;
+                        newContentStream << line << "\n";
+                    }
+                }
+                else if (inTargetTable && line == TABLE_DATA_START) {
+                    // Found data section - all columns should be defined by now
+                    inDataSection = true;
+                    newContentStream << line << "\n";
+                }
+                else if (inTargetTable && line == TABLE_DATA_END) {
+                    // End of data section
+                    inDataSection = false;
+                    
+                    // Write modified data rows with the new column added (with default values)
+                    for (const auto& dataRow : dataRows) {
+                        newContentStream << dataRow << ROW_SEPARATOR << getDefaultValueForType(newColumn.dataType) << "\n";
+                    }
+                    
+                    newContentStream << line << "\n";
+                }
+                else if (inTargetTable && inDataSection && !line.empty() && line != TABLE_DATA_END) {
+                    // Store data rows to add default value for the new column
+                    dataRows.push_back(line);
+                }
+                else if (inTargetTable && line == "END_TABLE") {
+                    // End of table definition - write the new column before this
+                    newContentStream << "COLUMN " << newColumn.name << " " << newColumn.dataType;
+                    if (newColumn.dataType == DT_STRING) {
+                        newContentStream << " " << newColumn.stringLength;
+                    }
+                    newContentStream << "\n" << line << "\n";
+                    inTargetTable = false;
+                }
+                else {
+                    newContentStream << line << "\n";
+                }
+            }
+            
+            // Encrypt and write back to file
+            std::string newContent = newContentStream.str();
+            std::string encrypted = Encryption::encrypt(newContent);
+            
+            // Add integrity marker
+            std::string integrity = Encryption::hashString(encrypted);
+            std::string finalContent = std::string(DB_INTEGRITY_MARKER) + integrity + "\n" + encrypted;
+            
+            std::ofstream outFile(dbPath, std::ios::binary | std::ios::trunc);
+            outFile.write(finalContent.c_str(), finalContent.length());
+            
+            std::cout << "Column '" << columnName << "' added to table '" << tableName << "'" << std::endl;
+            return true;
+        }
+        catch (const std::exception& e) {
+            std::cout << "Error: Failed to add column - " << e.what() << std::endl;
+            return false;
+        }
+    }
+    else if (operation == "removeColumn") {
+        // Check if column exists
+        int columnIndex = -1;
+        for (size_t i = 0; i < columns.size(); i++) {
+            if (columns[i].name == columnName) {
+                columnIndex = static_cast<int>(i);
+                break;
+            }
+        }
+        
+        if (columnIndex == -1) {
+            std::cout << "Error: Column '" << columnName << "' does not exist in table '" << tableName << "'" << std::endl;
+            return false;
+        }
+        
+        // Don't allow removal of the last column
+        if (columns.size() <= 1) {
+            std::cout << "Error: Cannot remove the only column in the table" << std::endl;
+            return false;
+        }
+        
+        try {
+            // Read database content
+            std::filesystem::path dbPath = std::filesystem::current_path() / (currentDatabase + AQADEL_DB_EXT);
+            std::string fileContent = readAndVerifyDatabaseContent(dbPath);
+            std::string encryptedContent = extractEncryptedContent(fileContent);
+            std::string decrypted = Encryption::decrypt(encryptedContent);
+            
+            // Process and update the content
+            std::istringstream contentStream(decrypted);
+            std::ostringstream newContentStream;
+            std::string line;
+            bool inTargetTable = false;
+            bool inDataSection = false;
+            
+            while (std::getline(contentStream, line)) {
+                if (line.substr(0, 6) == "TABLE ") {
+                    std::string currentTable = line.substr(6);
+                    currentTable.erase(0, currentTable.find_first_not_of(" \t"));
+                    currentTable.erase(currentTable.find_last_not_of(" \t") + 1);
+                    
+                    if (currentTable == tableName) {
+                        inTargetTable = true;
+                        newContentStream << line << "\n";
+                    } else {
+                        inTargetTable = false;
+                        newContentStream << line << "\n";
+                    }
+                }
+                else if (inTargetTable && line.substr(0, 7) == "COLUMN " && line.find(columnName) != std::string::npos) {
+                    // Skip this column definition - don't write it to the new content
+                    continue;
+                }
+                else if (inTargetTable && line == TABLE_DATA_START) {
+                    // Found data section
+                    inDataSection = true;
+                    newContentStream << line << "\n";
+                }
+                else if (inTargetTable && line == TABLE_DATA_END) {
+                    // End of data section
+                    inDataSection = false;
+                    newContentStream << line << "\n";
+                }
+                else if (inTargetTable && inDataSection && !line.empty() && line != TABLE_DATA_END) {
+                    // Process data row - remove the column value
+                    std::vector<std::string> values;
+                    std::string value;
+                    std::istringstream rowStream(line);
+                    
+                    int currentCol = 0;
+                    while (std::getline(rowStream, value, *ROW_SEPARATOR)) {
+                        if (currentCol != columnIndex) {
+                            values.push_back(value);
+                        }
+                        currentCol++;
+                    }
+                    
+                    // Write modified row
+                    std::string newRow;
+                    for (const auto& val : values) {
+                        if (!newRow.empty()) newRow += ROW_SEPARATOR;
+                        newRow += val;
+                    }
+                    
+                    newContentStream << newRow << "\n";
+                }
+                else {
+                    newContentStream << line << "\n";
+                }
+            }
+            
+            // Encrypt and write back to file
+            std::string newContent = newContentStream.str();
+            std::string encrypted = Encryption::encrypt(newContent);
+            
+            // Add integrity marker
+            std::string integrity = Encryption::hashString(encrypted);
+            std::string finalContent = std::string(DB_INTEGRITY_MARKER) + integrity + "\n" + encrypted;
+            
+            std::ofstream outFile(dbPath, std::ios::binary | std::ios::trunc);
+            outFile.write(finalContent.c_str(), finalContent.length());
+            
+            std::cout << "Column '" << columnName << "' removed from table '" << tableName << "'" << std::endl;
+            return true;
+        }
+        catch (const std::exception& e) {
+            std::cout << "Error: Failed to remove column - " << e.what() << std::endl;
+            return false;
+        }
+    }
+    else {
+        std::cout << "Error: Unknown operation '" << operation << "'. Use 'addColumn' or 'removeColumn'" << std::endl;
+        return false;
+    }
+}
+
+// Helper method to get default values for different data types
+std::string CLI::getDefaultValueForType(const std::string& dataType) {
+    if (dataType == DT_INT) {
+        return "0";
+    } else if (dataType == DT_FLOAT) {
+        return "0.0";
+    } else if (dataType == DT_BOOL) {
+        return "false";
+    } else if (dataType == DT_STRING) {
+        return "";
+    }
+    return "";
 }

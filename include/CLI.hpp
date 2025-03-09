@@ -48,4 +48,6 @@ private:
     bool deleteValues(const std::string& command);
     bool deleteTable(const std::string& tableName);
     bool deleteDatabase(const std::string& dbName);
+    bool editTable(const std::string& command);
+    std::string getDefaultValueForType(const std::string& dataType); // Helper for default values
 };
