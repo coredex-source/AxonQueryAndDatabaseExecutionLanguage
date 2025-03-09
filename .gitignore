@@ -1,5 +1,5 @@
 .vscode/
 build/
-*.aqdb
+*.aqadb
 *.dat
 *.cfg

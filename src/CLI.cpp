@@ -63,6 +63,8 @@ bool CLI::processCommand(const std::string& command) {
         std::cout << "  displayTable <name> - Display all values in table" << std::endl;
         std::cout << "  deleteValue TableName if ColumnName == Value - Delete rows where condition is met" << std::endl;
         std::cout << "    Note: Value should be in quotes if string" << std::endl;
+        std::cout << "  editValue TableName set ColumnName = NewValue if ColumnName == Value - Edit values" << std::endl;
+        std::cout << "    Note: Value and NewValue should be in quotes if string" << std::endl;
     }
     else if (cmd == "createDatabase") {
         std::string dbName;
@@ -183,6 +185,15 @@ bool CLI::processCommand(const std::string& command) {
             std::string editCommand;
             std::getline(iss, editCommand);
             editTable(editCommand);
+        }
+    }
+    else if (cmd == "editValue") {
+        if (currentDatabase.empty()) {
+            std::cout << "Error: No database selected. Use 'useDatabase' first." << std::endl;
+        } else {
+            std::string editCommand;
+            std::getline(iss, editCommand);
+            editValue(editCommand);
         }
     }
     else if (!command.empty()) {
@@ -1743,4 +1754,158 @@ std::string CLI::getDefaultValueForType(const std::string& dataType) {
         return "";
     }
     return "";
+}
+
+bool CLI::editValue(const std::string& command) {
+    // Parse command: TableName set Column1 = NewValue if Column2 == Value
+    std::regex pattern(R"(\s*(\S+)\s+set\s+(\S+)\s*=\s*([^\s]+)\s+if\s+(\S+)\s*==\s*(.+))");
+    std::smatch matches;
+    
+    if (!std::regex_search(command, matches, pattern) || matches.size() < 6) {
+        std::cout << "Error: Invalid editValue syntax. Use 'editValue TableName set ColumnName = NewValue if ColumnName == Value'" << std::endl;
+        return false;
+    }
+    
+    std::string tableName = matches[1].str();
+    std::string setColumnName = matches[2].str();
+    std::string newValueStr = matches[3].str();
+    std::string condColumnName = matches[4].str();
+    std::string condValueStr = matches[5].str();
+    
+    // Trim whitespace
+    newValueStr.erase(0, newValueStr.find_first_not_of(" \t"));
+    newValueStr.erase(newValueStr.find_last_not_of(" \t") + 1);
+    condValueStr.erase(0, condValueStr.find_first_not_of(" \t"));
+    condValueStr.erase(condValueStr.find_last_not_of(" \t") + 1);
+    
+    // Parse quoted strings
+    std::string parsedNewValue, parsedCondValue;
+    parseValue(newValueStr, parsedNewValue);
+    parseValue(condValueStr, parsedCondValue);
+    
+    if (!tableExists(tableName)) {
+        std::cout << "Error: Table '" << tableName << "' does not exist" << std::endl;
+        return false;
+    }
+    
+    // Get table structure
+    std::vector<Column> columns = getTableColumns(tableName);
+    
+    // Find column indices
+    int setColumnIndex = -1, condColumnIndex = -1;
+    for (size_t i = 0; i < columns.size(); i++) {
+        if (columns[i].name == setColumnName) {
+            setColumnIndex = static_cast<int>(i);
+        }
+        if (columns[i].name == condColumnName) {
+            condColumnIndex = static_cast<int>(i);
+        }
+    }
+    
+    if (setColumnIndex == -1) {
+        std::cout << "Error: Column '" << setColumnName << "' does not exist in table '" << tableName << "'" << std::endl;
+        return false;
+    }
+    
+    if (condColumnIndex == -1) {
+        std::cout << "Error: Column '" << condColumnName << "' does not exist in table '" << tableName << "'" << std::endl;
+        return false;
+    }
+    
+    // Validate that the values match their respective column types
+    if (!validateValue(parsedNewValue, columns[setColumnIndex])) {
+        std::cout << "Error: New value '" << newValueStr << "' is not valid for column '" 
+                 << setColumnName << "' with type '" << columns[setColumnIndex].dataType << "'" << std::endl;
+        return false;
+    }
+    
+    if (!validateValue(parsedCondValue, columns[condColumnIndex])) {
+        std::cout << "Error: Condition value '" << condValueStr << "' is not valid for column '" 
+                 << condColumnName << "' with type '" << columns[condColumnIndex].dataType << "'" << std::endl;
+        return false;
+    }
+    
+    try {
+        // Read existing database content
+        std::filesystem::path dbPath = std::filesystem::current_path() / (currentDatabase + AQADEL_DB_EXT);
+        std::string fileContent = readAndVerifyDatabaseContent(dbPath);
+        std::string encryptedContent = extractEncryptedContent(fileContent);
+        std::string decrypted = Encryption::decrypt(encryptedContent);
+        
+        // Process the content and update matching rows
+        std::istringstream iss(decrypted);
+        std::ostringstream oss;
+        std::string line;
+        bool inTargetTable = false;
+        bool dataStartFound = false;
+        bool dataEndFound = false;
+        int rowsUpdated = 0;
+        
+        while (std::getline(iss, line)) {
+            if (line.substr(0, 6) == "TABLE " && line.substr(6) == tableName) {
+                inTargetTable = true;
+                oss << line << "\n";
+            }
+            else if (inTargetTable && line == TABLE_DATA_START) {
+                dataStartFound = true;
+                oss << line << "\n";
+            }
+            else if (inTargetTable && line == TABLE_DATA_END) {
+                oss << line << "\n";
+                dataEndFound = true;
+                inTargetTable = false;
+            }
+            else if (inTargetTable && dataStartFound && !dataEndFound && !line.empty()) {
+                // Process data row
+                std::vector<std::string> rowValues;
+                std::string value;
+                std::istringstream rowStream(line);
+                
+                // Split row values by separator
+                while (std::getline(rowStream, value, *ROW_SEPARATOR)) {
+                    rowValues.push_back(value);
+                }
+                
+                // Check if this row matches the condition
+                if (condColumnIndex < static_cast<int>(rowValues.size()) && 
+                    rowValues[condColumnIndex] == parsedCondValue) {
+                    // Update the value
+                    rowValues[setColumnIndex] = parsedNewValue;
+                    rowsUpdated++;
+                    
+                    // Write the updated row
+                    std::string updatedRow;
+                    for (const auto& val : rowValues) {
+                        if (!updatedRow.empty()) updatedRow += ROW_SEPARATOR;
+                        updatedRow += val;
+                    }
+                    oss << updatedRow << "\n";
+                } else {
+                    // Keep the row unchanged
+                    oss << line << "\n";
+                }
+            }
+            else {
+                oss << line << "\n";
+            }
+        }
+        
+        // Encrypt and write back to file
+        std::string newContent = oss.str();
+        std::string encrypted = Encryption::encrypt(newContent);
+        
+        // Add integrity marker
+        std::string integrity = Encryption::hashString(encrypted);
+        std::string finalContent = std::string(DB_INTEGRITY_MARKER) + integrity + "\n" + encrypted;
+        
+        std::ofstream outFile(dbPath, std::ios::binary | std::ios::trunc);
+        outFile.write(finalContent.c_str(), finalContent.length());
+        
+        std::cout << "Updated " << rowsUpdated << " row(s) in table '" << tableName << "'" << std::endl;
+        return true;
+    }
+    catch (const std::exception& e) {
+        std::cout << "Error: Failed to update values - " << e.what() << std::endl;
+        return false;
+    }
 }
