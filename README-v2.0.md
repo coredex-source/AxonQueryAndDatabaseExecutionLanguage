@@ -36,17 +36,15 @@
 
 - deleteTable TableName  -  Deletes a table.
 
-- exit  -  Exits the program.
-
-- help  -  Displays this message.
-
-## To be available commands -
-
 - openSafeBlock | openTransaction | openChannel | osb  -  let's user run quaries without permanently saving database until close query is executed (closeSafeBlock | closeTransaction | closeChannel | csb).
 
 - discardSafeBlock | discardTransaction | discardChannel | dsb  -  Discards all changes done in a safe block and closes the safe block. 
 
 - closeSafeBlock | closeTransaction | closeChannel | csb  -  Saves all changes done in a safe block and closes the safe block.
+
+- exit  -  Exits the program.
+
+- help  -  Displays this message.
 
 ## Future Features Roadmap (EXTREMELY VULNERABLE TO CHANGES)
 
