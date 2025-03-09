@@ -950,21 +950,17 @@ void CLI::displayTable(const std::string& tableName) {
         bool inTargetTable = false;
         bool inData = false;
         bool hasData = false;
+        
+        // Store rows for display
+        std::vector<std::vector<std::string>> rows;
 
-        // Calculate column widths
+        // Calculate column widths - accounting for data content too
         std::vector<size_t> colWidths;
         for (const auto& col : columns) {
-            colWidths.push_back(std::max(col.name.length(), size_t(15)));
+            colWidths.push_back(col.name.length());
         }
 
-        // Print header
-        std::cout << std::string(50, '-') << std::endl;
-        for (size_t i = 0; i < columns.size(); i++) {
-            std::cout << std::left << std::setw(colWidths[i]) << columns[i].name << " ";
-        }
-        std::cout << std::endl << std::string(50, '-') << std::endl;
-
-        // Display data
+        // First pass: collect data and calculate column widths
         while (std::getline(iss, line)) {
             if (line.substr(0, 6) == "TABLE " && line.substr(6) == tableName) {
                 inTargetTable = true;
@@ -980,22 +976,78 @@ void CLI::displayTable(const std::string& tableName) {
                 hasData = true;
                 std::istringstream rowStream(line);
                 std::string value;
+                std::vector<std::string> row;
                 size_t colIndex = 0;
                 
                 while (std::getline(rowStream, value, *ROW_SEPARATOR)) {
-                    if (colIndex < columns.size()) {
-                        std::cout << std::left << std::setw(colWidths[colIndex]) << value << " ";
+                    row.push_back(value);
+                    if (colIndex < colWidths.size()) {
+                        colWidths[colIndex] = std::max(colWidths[colIndex], value.length());
                     }
                     colIndex++;
                 }
-                std::cout << std::endl;
+                
+                // Pad row if incomplete
+                while (row.size() < columns.size()) {
+                    row.push_back("");
+                }
+                
+                rows.push_back(row);
             }
         }
-
-        std::cout << std::string(50, '-') << std::endl;
-        if (!hasData) {
-            std::cout << "No data in table" << std::endl;
+        
+        // Add padding to column widths
+        for (auto& width : colWidths) {
+            width += 2; // Add padding
         }
+
+        // Calculate total width
+        size_t totalWidth = 1; // Start with 1 for the first border
+        for (const auto& width : colWidths) {
+            totalWidth += width + 1; // Add column width and the border character
+        }
+        
+        // Function to print horizontal border
+        auto printBorder = [&]() {
+            std::cout << '+';
+            for (const auto& width : colWidths) {
+                std::cout << std::string(width, '-') << '+';
+            }
+            std::cout << std::endl;
+        };
+        
+        // Print top border
+        printBorder();
+        
+        // Print header row
+        std::cout << '|';
+        for (size_t i = 0; i < columns.size(); i++) {
+            std::cout << ' ' << std::left << std::setw(colWidths[i] - 2) << columns[i].name << " |";
+        }
+        std::cout << std::endl;
+        
+        // Print header-data separator
+        printBorder();
+        
+        // Print data rows
+        if (hasData) {
+            for (const auto& row : rows) {
+                std::cout << '|';
+                for (size_t i = 0; i < columns.size(); i++) {
+                    if (i < row.size()) {
+                        std::cout << ' ' << std::left << std::setw(colWidths[i] - 2) << row[i] << " |";
+                    } else {
+                        std::cout << ' ' << std::left << std::setw(colWidths[i] - 2) << "" << " |";
+                    }
+                }
+                std::cout << std::endl;
+            }
+        } else {
+            std::cout << '|' << std::left << std::setw(totalWidth - 2) << " No data in table" << '|' << std::endl;
+        }
+        
+        // Print bottom border
+        printBorder();
     }
     catch (const std::exception& e) {
         std::cout << "Error: " << e.what() << std::endl;
