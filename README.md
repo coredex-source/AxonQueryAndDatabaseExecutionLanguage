@@ -2,6 +2,8 @@
 - AQADEL or AxonQueryAndDatabaseExecutionLanguage is a DBMS written in C++.
     - Commits and updates will be appriciated!
 
+###  Refer to README-v2.0.md if building a newer version from source.
+
 ## Available Commands - 
 - createDatabase DatabaseName  -  Creates a database with a specified name and by default switches to the database.
 
