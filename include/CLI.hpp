@@ -51,4 +51,13 @@ private:
     bool editTable(const std::string& command);
     std::string getDefaultValueForType(const std::string& dataType);
     bool editValue(const std::string& command);
+    bool inSafeBlock;
+    std::string safeBlockBackupPath;
+    bool openSafeBlock();
+    bool closeSafeBlock();
+    bool discardSafeBlock();
+    bool createBackup();
+    bool restoreFromBackup();
+    bool deleteBackup();
+    std::string getBackupPath();
 };

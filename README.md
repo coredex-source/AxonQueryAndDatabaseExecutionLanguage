@@ -36,17 +36,54 @@
 
 - deleteTable TableName  -  Deletes a table.
 
-- exit  -  Exits the program.
-
-- help  -  Displays this message.
-
-## To be available commands -
-
 - openSafeBlock | openTransaction | openChannel | osb  -  let's user run quaries without permanently saving database until close query is executed (closeSafeBlock | closeTransaction | closeChannel | csb).
 
 - discardSafeBlock | discardTransaction | discardChannel | dsb  -  Discards all changes done in a safe block and closes the safe block. 
 
 - closeSafeBlock | closeTransaction | closeChannel | csb  -  Saves all changes done in a safe block and closes the safe block.
+
+- exit  -  Exits the program.
+
+- help  -  Displays this message.
+
+## Future Features Roadmap (EXTREMELY VULNERABLE TO CHANGES)
+
+### Data Management and Querying
+- **Advanced Data Types** - Support for binary data, JSON objects, and arrays
+- **Complex Queries** - Implementation of JOIN operations, complex WHERE clauses with multiple conditions
+- **Query Optimization** - Automatic query optimization for faster data retrieval
+- **Views** - Create virtual tables based on query results
+- **Indexes** - Add primary and secondary indexes for improved query performance
+- **Stored Procedures** - Support for defining and executing stored procedures
+- **Triggers** - Set up automatic actions when data changes
+
+### Security and User Management
+- **Role-Based Access Control** - Define roles with specific permissions
+- **Multi-User Support** - Allow multiple users with different privilege levels
+- **Row-Level Security** - Control access to specific data rows based on user roles
+- **Audit Logging** - Track and log all database operations
+
+### Data Integrity and Recovery
+- **Foreign Key Constraints** - Enforce relationships between tables
+- **Unique Constraints** - Ensure uniqueness of specific column values
+- **Backup and Restore** - Tools for database backup and recovery
+- **Point-in-Time Recovery** - Ability to restore database to a specific moment
+- **Database Mirroring** - Maintain redundant copies for high availability
+
+### Tools and Interfaces
+- **GUI Client** - Graphical interface for database management
+- **Import/Export Tools** - Support CSV, JSON, and other formats
+- **Language Bindings** - API support for Python, Java, Node.js, etc.
+- **Remote Connection** - Connect to the database over a network
+- **Connection Pooling** - Efficiently manage multiple simultaneous connections
+
+### Advanced Features
+- **Full-Text Search** - Implement advanced text search capabilities
+- **Geospatial Data** - Support for location-based queries
+- **Time-Series Data** - Optimized storage and querying for time-series data
+- **Distributed Database** - Support for distributed database architecture
+- **Sharding** - Horizontal partitioning for very large datasets
+- **Analytics** - Built-in analytical functions and reporting tools
 
 ## Building on windows -
   - Requirements:

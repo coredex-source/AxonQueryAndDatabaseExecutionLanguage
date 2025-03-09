@@ -17,6 +17,8 @@
 
 CLI::CLI() {
     loadDefaultDatabase();
+    inSafeBlock = false;
+    safeBlockBackupPath = "";
 }
 
 void CLI::start() {
@@ -39,6 +41,12 @@ bool CLI::processCommand(const std::string& command) {
     cmd = resolveCommandAlias(cmd);
 
     if (cmd == "exit") {
+        // Check if there's an open transaction
+        if (inSafeBlock) {
+            std::cout << "Error: Cannot exit with an open safe block. Use 'closeSafeBlock' or 'discardSafeBlock' first." << std::endl;
+            return true;
+        }
+        
         std::cout << "Thank you for using AQADEL!" << std::endl;
         std::cout << getRandomFunFact() << std::endl;
         return false;
@@ -65,6 +73,10 @@ bool CLI::processCommand(const std::string& command) {
         std::cout << "    Note: Value should be in quotes if string" << std::endl;
         std::cout << "  editValue TableName set ColumnName = NewValue if ColumnName == Value - Edit values" << std::endl;
         std::cout << "    Note: Value and NewValue should be in quotes if string" << std::endl;
+        std::cout << "  openSafeBlock|openTransaction|openChannel|osb - Start a transaction" << std::endl;
+        std::cout << "    Note: Changes won't be permanently saved until closeSafeBlock is executed" << std::endl;
+        std::cout << "  closeSafeBlock|closeTransaction|closeChannel|csb - Save and end transaction" << std::endl;
+        std::cout << "  discardSafeBlock|discardTransaction|discardChannel|dsb - Discard changes and end transaction" << std::endl;
     }
     else if (cmd == "createDatabase") {
         std::string dbName;
@@ -196,6 +208,15 @@ bool CLI::processCommand(const std::string& command) {
             editValue(editCommand);
         }
     }
+    else if (cmd == "openSafeBlock") {
+        openSafeBlock();
+    }
+    else if (cmd == "closeSafeBlock") {
+        closeSafeBlock();
+    }
+    else if (cmd == "discardSafeBlock") {
+        discardSafeBlock();
+    }
     else if (!command.empty()) {
         std::cout << "Unknown command. Type 'help' for available commands." << std::endl;
     }
@@ -208,7 +229,17 @@ std::string CLI::resolveCommandAlias(const std::string& cmd) {
         {"useDB", "useDatabase"},
         {"listDBs", "listDatabases"},
         {"defaultDB", "defaultDatabase"},
-        {"deleteDB", "deleteDatabase"}
+        {"deleteDB", "deleteDatabase"},
+        // Safe block aliases
+        {"openTransaction", "openSafeBlock"},
+        {"openChannel", "openSafeBlock"},
+        {"osb", "openSafeBlock"},
+        {"closeTransaction", "closeSafeBlock"},
+        {"closeChannel", "closeSafeBlock"},
+        {"csb", "closeSafeBlock"},
+        {"discardTransaction", "discardSafeBlock"},
+        {"discardChannel", "discardSafeBlock"},
+        {"dsb", "discardSafeBlock"}
     };
 
     auto it = aliases.find(cmd);
@@ -1908,4 +1939,150 @@ bool CLI::editValue(const std::string& command) {
         std::cout << "Error: Failed to update values - " << e.what() << std::endl;
         return false;
     }
+}
+
+bool CLI::openSafeBlock() {
+    // Check if safe block is already open
+    if (inSafeBlock) {
+        std::cout << "Error: Safe block already open. Close the current safe block first." << std::endl;
+        return false;
+    }
+
+    // Check if database is selected
+    if (currentDatabase.empty()) {
+        std::cout << "Error: No database selected. Use 'useDatabase' first." << std::endl;
+        return false;
+    }
+
+    // Create backup of current database state
+    if (!createBackup()) {
+        std::cout << "Error: Could not create backup of database." << std::endl;
+        return false;
+    }
+
+    inSafeBlock = true;
+    std::cout << "Safe block opened. All changes will be temporary until closed." << std::endl;
+    return true;
+}
+
+bool CLI::closeSafeBlock() {
+    // Check if safe block is open
+    if (!inSafeBlock) {
+        std::cout << "Error: No safe block is currently open." << std::endl;
+        return false;
+    }
+
+    // Delete the backup as we're committing changes
+    if (!deleteBackup()) {
+        std::cout << "Warning: Could not delete backup file." << std::endl;
+    }
+
+    inSafeBlock = false;
+    safeBlockBackupPath = "";
+    std::cout << "Safe block closed. All changes have been saved permanently." << std::endl;
+    return true;
+}
+
+bool CLI::discardSafeBlock() {
+    // Check if safe block is open
+    if (!inSafeBlock) {
+        std::cout << "Error: No safe block is currently open." << std::endl;
+        return false;
+    }
+
+    // Restore from backup
+    if (!restoreFromBackup()) {
+        std::cout << "Error: Could not restore from backup." << std::endl;
+        return false;
+    }
+
+    inSafeBlock = false;
+    safeBlockBackupPath = "";
+    std::cout << "Safe block discarded. All changes have been reverted." << std::endl;
+    return true;
+}
+
+bool CLI::createBackup() {
+    try {
+        std::filesystem::path dbPath = std::filesystem::current_path() / (currentDatabase + AQADEL_DB_EXT);
+        safeBlockBackupPath = getBackupPath();
+        
+        // Copy the database file to the backup location
+        std::filesystem::copy_file(
+            dbPath, 
+            safeBlockBackupPath, 
+            std::filesystem::copy_options::overwrite_existing
+        );
+        
+        return true;
+    }
+    catch (const std::exception& e) {
+        std::cout << "Error creating backup: " << e.what() << std::endl;
+        return false;
+    }
+}
+
+bool CLI::restoreFromBackup() {
+    try {
+        if (safeBlockBackupPath.empty()) {
+            std::cout << "Error: No backup path specified." << std::endl;
+            return false;
+        }
+
+        std::filesystem::path dbPath = std::filesystem::current_path() / (currentDatabase + AQADEL_DB_EXT);
+        
+        // First, make sure the target file is writable - remove it if it exists
+        if (std::filesystem::exists(dbPath)) {
+            std::filesystem::remove(dbPath);
+        }
+        
+        // Create a copy of the backup file
+        std::ifstream src(safeBlockBackupPath, std::ios::binary);
+        if (!src) {
+            throw std::runtime_error("Cannot open backup file for reading");
+        }
+        
+        std::ofstream dst(dbPath, std::ios::binary);
+        if (!dst) {
+            throw std::runtime_error("Cannot create destination file for writing");
+        }
+        
+        dst << src.rdbuf();
+        
+        // Close files
+        src.close();
+        dst.close();
+        
+        // Delete the backup file after restoring
+        deleteBackup();
+        
+        return true;
+    }
+    catch (const std::exception& e) {
+        std::cout << "Error restoring from backup: " << e.what() << std::endl;
+        return false;
+    }
+}
+
+bool CLI::deleteBackup() {
+    try {
+        if (safeBlockBackupPath.empty()) {
+            return true;  // Nothing to delete
+        }
+
+        if (std::filesystem::exists(safeBlockBackupPath)) {
+            std::filesystem::remove(safeBlockBackupPath);
+        }
+        
+        return true;
+    }
+    catch (const std::exception& e) {
+        std::cout << "Error deleting backup: " << e.what() << std::endl;
+        return false;
+    }
+}
+
+std::string CLI::getBackupPath() {
+    // Create a backup filename based on the current database name
+    return (std::filesystem::current_path() / (currentDatabase + ".backup" + AQADEL_DB_EXT)).string();
 }
