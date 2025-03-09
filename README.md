@@ -109,3 +109,4 @@
     ```
 
 - Pre-compiled binaries for linux and macOS should be available in the actions tab.
+- Any issues should be reported in issues tab.
