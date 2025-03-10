@@ -69,6 +69,7 @@ bool CLI::processCommand(const std::string& command) {
         std::cout << "    Note: DataType required only when adding columns (e.g., int, float, bool, string{length})" << std::endl;
         std::cout << "  insertValues TableName(value1, value2, ...) - Insert values into table" << std::endl;
         std::cout << "  displayTable <name> - Display all values in table" << std::endl;
+        std::cout << "  displayTable <name> select values if ColumnName == <value> - Display selected values from a table" << std::endl;
         std::cout << "  deleteValue TableName if ColumnName == Value - Delete rows where condition is met" << std::endl;
         std::cout << "    Note: Value should be in quotes if string" << std::endl;
         std::cout << "  editValue TableName set ColumnName = NewValue if ColumnName == Value - Edit values" << std::endl;
@@ -151,7 +152,7 @@ bool CLI::processCommand(const std::string& command) {
             std::cout << "Error: No database selected. Use 'useDatabase' first." << std::endl;
         } else {
             std::string tableName;
-            iss >> tableName;
+            std::getline(iss, tableName);
             if (tableName.empty()) {
                 std::cout << "Error: Table name is required" << std::endl;
             } else {
@@ -973,7 +974,41 @@ bool CLI::insertValues(const std::string& command) {
     }
 }
 
-void CLI::displayTable(const std::string& tableName) {
+void CLI::displayTable(const std::string& command) {
+    std::istringstream iss(command);
+    std::string tableName, selectKeyword, valuesKeyword, ifKeyword, columnName, equalOp, value;
+    
+    // Get table name first
+    iss >> tableName;
+    
+    // Check if this is a filtered display
+    if (iss >> selectKeyword) {
+        // Parse: "select values if columnName == value"
+        if (selectKeyword == "select" && 
+            iss >> valuesKeyword && valuesKeyword == "values" &&
+            iss >> ifKeyword && ifKeyword == "if" &&
+            iss >> columnName && 
+            iss >> equalOp && equalOp == "==" &&
+            std::getline(iss, value)) {
+            
+            // Trim whitespace from value
+            value.erase(0, value.find_first_not_of(" \t"));
+            value.erase(value.find_last_not_of(" \t") + 1);
+            
+            // Parse quoted strings
+            std::string parsedValue;
+            parseValue(value, parsedValue);
+            
+            displayFilteredTable(tableName, columnName, parsedValue);
+            return;
+        } else {
+            std::cout << "Error: Invalid display syntax. Use 'displayTable TableName' or" << std::endl;
+            std::cout << "'displayTable TableName select values if columnName == value'" << std::endl;
+            return;
+        }
+    }
+
+    // Original display logic for unfiltered display
     try {
         std::filesystem::path dbPath = std::filesystem::current_path() / (currentDatabase + AQADEL_DB_EXT);
         
@@ -1089,6 +1124,172 @@ void CLI::displayTable(const std::string& tableName) {
         }
         
         // Print bottom border
+        printBorder();
+    }
+    catch (const std::exception& e) {
+        std::cout << "Error: " << e.what() << std::endl;
+    }
+}
+
+void CLI::displayFilteredTable(const std::string& tableName, const std::string& columnName, const std::string& value) {
+    try {
+        std::filesystem::path dbPath = std::filesystem::current_path() / (currentDatabase + AQADEL_DB_EXT);
+        
+        // Get table columns
+        std::vector<Column> columns = getTableColumns(tableName);
+        if (columns.empty()) {
+            throw std::runtime_error("Table structure not found");
+        }
+
+        // Find column index and validate
+        int filterColumnIndex = -1;
+        for (size_t i = 0; i < columns.size(); i++) {
+            if (columns[i].name == columnName) {
+                filterColumnIndex = static_cast<int>(i);
+                // Validate the value against column type
+                if (!validateValue(value, columns[i])) {
+                    throw std::runtime_error("Invalid value type for column '" + columnName + "'");
+                }
+                break;
+            }
+        }
+
+        if (filterColumnIndex == -1) {
+            throw std::runtime_error("Column '" + columnName + "' not found");
+        }
+
+        // Get database content
+        std::string decrypted = getDecryptedContent(dbPath);
+        
+        // Process table data
+        std::istringstream iss(decrypted);
+        std::string line;
+        bool inTargetTable = false;
+        bool inData = false;
+        bool hasData = false;
+        
+        // Store matching rows for display
+        std::vector<std::vector<std::string>> rows;
+        
+        // Calculate column widths
+        std::vector<size_t> colWidths;
+        for (const auto& col : columns) {
+            colWidths.push_back(col.name.length());
+        }
+
+        // First pass: collect filtered data and calculate column widths
+        while (std::getline(iss, line)) {
+            if (line.substr(0, 6) == "TABLE " && line.substr(6) == tableName) {
+                inTargetTable = true;
+            }
+            else if (inTargetTable && line == TABLE_DATA_START) {
+                inData = true;
+            }
+            else if (inTargetTable && line == TABLE_DATA_END) {
+                break;
+            }
+            else if (inData) {
+                std::vector<std::string> rowValues;
+                std::string rowValue;
+                std::istringstream rowStream(line);
+                
+                while (std::getline(rowStream, rowValue, *ROW_SEPARATOR)) {
+                    rowValues.push_back(rowValue);
+                }
+                
+                // Check if this row matches the filter
+                if (filterColumnIndex < static_cast<int>(rowValues.size()) && 
+                    rowValues[filterColumnIndex] == value) {
+                    hasData = true;
+                    
+                    // Update column widths
+                    for (size_t i = 0; i < rowValues.size() && i < colWidths.size(); i++) {
+                        colWidths[i] = std::max(colWidths[i], rowValues[i].length());
+                    }
+                    
+                    rows.push_back(rowValues);
+                }
+            }
+        }
+        
+        // Add padding to column widths
+        for (auto& width : colWidths) {
+            width += 2;
+        }
+
+        // Calculate total width including borders
+        size_t totalWidth = 1; // Start with 1 for first border
+        for (const auto& width : colWidths) {
+            totalWidth += width + 1; // Width plus divider
+        }
+
+        // If no data found, adjust total width if message is longer
+        const std::string noDataMsg = " No matching data found ";
+        if (!hasData) {
+            totalWidth = std::max(totalWidth, noDataMsg.length() + 4); // +4 for borders and spacing
+            // Recalculate column widths for single-cell message
+            if (columns.size() == 1) {
+                colWidths[0] = totalWidth - 2;
+            } else {
+                size_t extraSpace = totalWidth - 2 - columns.size() + 1;
+                size_t baseWidth = extraSpace / columns.size();
+                for (auto& width : colWidths) {
+                    width = baseWidth;
+                }
+                // Add remainder to last column
+                colWidths.back() += extraSpace % columns.size();
+            }
+        }
+        
+        // Print table
+        auto printBorder = [&]() {
+            std::cout << '+';
+            for (const auto& width : colWidths) {
+                std::cout << std::string(width, '-') << '+';
+            }
+            std::cout << std::endl;
+        };
+        
+        printBorder();
+        
+        // Print header
+        std::cout << '|';
+        for (size_t i = 0; i < columns.size(); i++) {
+            std::cout << ' ' << std::left << std::setw(colWidths[i] - 2) << columns[i].name << " |";
+        }
+        std::cout << std::endl;
+        
+        printBorder();
+        
+        // Print filtered data
+        if (hasData) {
+            for (const auto& row : rows) {
+                std::cout << '|';
+                for (size_t i = 0; i < columns.size(); i++) {
+                    if (i < row.size()) {
+                        std::cout << ' ' << std::left << std::setw(colWidths[i] - 2) << row[i] << " |";
+                    } else {
+                        std::cout << ' ' << std::left << std::setw(colWidths[i] - 2) << "" << " |";
+                    }
+                }
+                std::cout << std::endl;
+            }
+        } else {
+            if (columns.size() == 1) {
+                std::cout << '|' << std::left << std::setw(totalWidth - 2) << noDataMsg << '|' << std::endl;
+            } else {
+                std::cout << '|';
+                for (size_t i = 0; i < columns.size(); i++) {
+                    if (i == 0) {
+                        std::cout << ' ' << std::left << std::setw(colWidths[i] - 2) << noDataMsg << " |";
+                    } else {
+                        std::cout << ' ' << std::left << std::setw(colWidths[i] - 2) << "" << " |";
+                    }
+                }
+                std::cout << std::endl;
+            }
+        }
+        
         printBorder();
     }
     catch (const std::exception& e) {

@@ -35,6 +35,7 @@ private:
     void descTable(const std::string& tableName);
     bool insertValues(const std::string& command);
     void displayTable(const std::string& tableName);
+    void displayFilteredTable(const std::string& tableName, const std::string& columnName, const std::string& value);
     std::vector<Column> getTableColumns(const std::string& tableName);
     bool validateValue(const std::string& value, const Column& column);
     void parseValue(const std::string& value, std::string& parsedValue);

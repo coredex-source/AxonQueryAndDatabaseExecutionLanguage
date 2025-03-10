@@ -25,6 +25,9 @@
 
 - displayTable TableName  -  Displays a specified table.
 
+- displayTable Main select values if columnName == value  -  Displays a specific part of a table.
+  - Note: String must be in "".
+
 - editTable TableName addColumn/removeColumn ColumnName Datatype  -  Adds or removes a column in a specified table.
   - Note: Datatype required only when adding.
 
