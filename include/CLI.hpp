@@ -14,6 +14,8 @@ struct Column {
     std::string name;
     std::string dataType;
     int stringLength;
+    bool isPrimary;
+    bool isUnique;
 };
 
 class CLI {
@@ -61,4 +63,5 @@ private:
     bool restoreFromBackup();
     bool deleteBackup();
     std::string getBackupPath();
+    bool validateUniqueness(const std::string& tableName, const Column& column, const std::string& value);
 };

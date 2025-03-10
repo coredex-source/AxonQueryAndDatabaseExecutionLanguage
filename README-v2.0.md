@@ -13,7 +13,7 @@
 
 - deleteDatabase DatabaseName  -  Deletes a database.
 
-- createTable TableName[ColumnName datatype, ...]  -  Creates a table within a database.
+- createTable TableName[col1 type attribute, col2 type attribute, ...] - Create a new table, attribute(unique|primary) parameter is optional.
   - Note: for string datatypes: string{length}
 
 - listTables  -  Shows a list of tables in the currently selected database.

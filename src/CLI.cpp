@@ -62,7 +62,7 @@ bool CLI::processCommand(const std::string& command) {
         std::cout << "  deleteDatabase|deleteDB <name> - Delete an existing database" << std::endl;
         std::cout << "  listTables - Show all tables in current database" << std::endl;
         std::cout << "  descTable <name> - Describe the structure of a table" << std::endl;
-        std::cout << "  createTable TableName[col1 type, col2 type, ...] - Create a new table" << std::endl;
+        std::cout << "  createTable TableName[col1 type attribute, col2 type attribute, ...] - Create a new table, attribute(unique|primary) parameter is optional" << std::endl;
         std::cout << "    Supported types: int, float, bool, string{length}" << std::endl;
         std::cout << "  deleteTable <name> - Delete a table from current database" << std::endl;
         std::cout << "  editTable TableName addColumn/removeColumn ColumnName [DataType] - Modify table structure" << std::endl;
@@ -433,6 +433,12 @@ void CLI::writeTableToDatabase(const std::string& tableName, const std::vector<C
         if (col.dataType == DT_STRING) {
             newContent << " " << col.stringLength;
         }
+        if (col.isPrimary) {
+            newContent << " primary";
+        }
+        if (col.isUnique) {
+            newContent << " unique";
+        }
         newContent << "\n";
     }
     newContent << TABLE_DATA_START << "\n";  // Add empty data section
@@ -520,6 +526,7 @@ bool CLI::tableExists(const std::string& tableName) {
 bool CLI::parseColumns(const std::string& columnStr, std::vector<Column>& columns) {
     std::istringstream iss(columnStr);
     std::string columnDef;
+    bool hasPrimary = false;
     
     while (std::getline(iss, columnDef, ',')) {
         // Trim whitespace
@@ -529,9 +536,28 @@ bool CLI::parseColumns(const std::string& columnStr, std::vector<Column>& column
         std::istringstream colStream(columnDef);
         Column col;
         std::string dataType;
+        col.isPrimary = false;
+        col.isUnique = false;
 
         colStream >> col.name >> dataType;
 
+        // Parse attributes if present
+        std::string attribute;
+        while (colStream >> attribute) {
+            if (attribute == "primary") {
+                if (hasPrimary) {
+                    std::cout << "Error: Multiple primary keys are not allowed" << std::endl;
+                    return false;
+                }
+                col.isPrimary = true;
+                col.isUnique = true;  // Primary implies unique
+                hasPrimary = true;
+            } else if (attribute == "unique") {
+                col.isUnique = true;
+            }
+        }
+
+        // Rest of the existing parsing logic
         if (col.name.empty() || dataType.empty()) {
             std::cout << "Error: Invalid column definition: " << columnDef << std::endl;
             return false;
@@ -569,12 +595,7 @@ bool CLI::parseColumns(const std::string& columnStr, std::vector<Column>& column
         columns.push_back(col);
     }
 
-    if (columns.empty()) {
-        std::cout << "Error: No columns defined" << std::endl;
-        return false;
-    }
-
-    return true;
+    return !columns.empty();
 }
 
 void CLI::listTables() {
@@ -699,7 +720,8 @@ void CLI::descTable(const std::string& tableName) {
         std::cout << std::left 
                   << std::setw(20) << "Column Name"
                   << std::setw(15) << "Type"
-                  << "Size" << std::endl;
+                  << std::setw(10) << "Size"
+                  << "Attributes" << std::endl;
         std::cout << separator << std::endl;
         
         while (std::getline(iss, line)) {
@@ -719,20 +741,31 @@ void CLI::descTable(const std::string& tableName) {
                 std::istringstream colStream(line.substr(7));
                 std::string colName, colType;
                 int stringSize = 0;
+                bool isPrimary = false;
+                bool isUnique = false;
                 
-                colStream >> colName >> colType;
-                if (colType == DT_STRING) {
-                    colStream >> stringSize;
+                // Parse column definition including attributes
+                std::string word;
+                int wordCount = 0;
+                while (colStream >> word) {
+                    if (wordCount == 0) colName = word;
+                    else if (wordCount == 1) colType = word;
+                    else if (colType == DT_STRING && wordCount == 2) stringSize = std::stoi(word);
+                    else if (word == "primary") isPrimary = true;
+                    else if (word == "unique") isUnique = true;
+                    wordCount++;
                 }
                 
                 std::cout << std::left 
                          << std::setw(20) << colName
-                         << std::setw(15) << colType;
-                if (colType == DT_STRING) {
-                    std::cout << stringSize;
-                } else {
-                    std::cout << "-";
-                }
+                         << std::setw(15) << colType
+                         << std::setw(10) << (colType == DT_STRING ? std::to_string(stringSize) : "-");
+                
+                // Display attributes
+                if (isPrimary) std::cout << "PRIMARY KEY";
+                else if (isUnique) std::cout << "UNIQUE";
+                else std::cout << "-";
+                
                 std::cout << std::endl;
             }
             else if (inTargetTable && line == "END_TABLE") {
@@ -893,6 +926,18 @@ bool CLI::insertValues(const std::string& command) {
         parsedValues.push_back(parsedValue);
     }
 
+    // Validate uniqueness constraints
+    for (size_t i = 0; i < columns.size(); i++) {
+        if (columns[i].isUnique || columns[i].isPrimary) {
+            if (!validateUniqueness(tableName, columns[i], parsedValues[i])) {
+                std::cout << "Error: Value '" << values[i] << "' violates " 
+                         << (columns[i].isPrimary ? "primary key" : "unique") 
+                         << " constraint on column '" << columns[i].name << "'" << std::endl;
+                return false;
+            }
+        }
+    }
+
     try {
         // Read existing database content
         std::filesystem::path dbPath = std::filesystem::current_path() / (currentDatabase + AQADEL_DB_EXT);
@@ -912,7 +957,6 @@ bool CLI::insertValues(const std::string& command) {
         while (std::getline(iss, line)) {
             if (line.substr(0, 6) == "TABLE " && line.substr(6) == tableName) {
                 inTargetTable = true;
-                oss << line << "\n";
             }
             else if (inTargetTable && line == TABLE_DATA_START) {
                 dataStartFound = true;
@@ -970,6 +1014,61 @@ bool CLI::insertValues(const std::string& command) {
     }
     catch (const std::exception& e) {
         std::cout << "Error: Failed to insert values - " << e.what() << std::endl;
+        return false;
+    }
+}
+
+bool CLI::validateUniqueness(const std::string& tableName, const Column& column, const std::string& value) {
+    try {
+        std::filesystem::path dbPath = std::filesystem::current_path() / (currentDatabase + AQADEL_DB_EXT);
+        std::string decrypted = getDecryptedContent(dbPath);
+        
+        std::istringstream iss(decrypted);
+        std::string line;
+        bool inTargetTable = false;
+        bool inData = false;
+        int columnIndex = -1;
+        
+        // Find the column index first
+        std::vector<Column> columns = getTableColumns(tableName);
+        for (size_t i = 0; i < columns.size(); i++) {
+            if (columns[i].name == column.name) {
+                columnIndex = static_cast<int>(i);
+                break;
+            }
+        }
+        
+        if (columnIndex == -1) return false;
+
+        while (std::getline(iss, line)) {
+            if (line.substr(0, 6) == "TABLE " && line.substr(6) == tableName) {
+                inTargetTable = true;
+            }
+            else if (inTargetTable && line == TABLE_DATA_START) {
+                inData = true;
+            }
+            else if (inTargetTable && line == TABLE_DATA_END) {
+                break;
+            }
+            else if (inData && !line.empty()) {
+                std::vector<std::string> rowValues;
+                std::string rowValue;
+                std::istringstream rowStream(line);
+                
+                while (std::getline(rowStream, rowValue, *ROW_SEPARATOR)) {
+                    rowValues.push_back(rowValue);
+                }
+                
+                if (columnIndex < static_cast<int>(rowValues.size()) && 
+                    rowValues[columnIndex] == value) {
+                    return false;  // Value already exists
+                }
+            }
+        }
+        
+        return true;  // Value is unique
+    }
+    catch (const std::exception&) {
         return false;
     }
 }
