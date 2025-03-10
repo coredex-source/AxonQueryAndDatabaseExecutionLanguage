@@ -1,7 +1,7 @@
 #pragma once
 
 #define AQADEL_NAME "AQADEL"
-#define AQADEL_VERSION "CPP-v2.0-a3"
+#define AQADEL_VERSION "CPP-v2.0-a4"
 #define AQADEL_DB_EXT ".aqadb"
 
 // Data type identifiers
@@ -39,3 +39,10 @@
 
 // Authentication constants
 #define MAX_PASSWORD_ATTEMPTS 3
+
+// Point-in-Time Recovery constants
+#define PITR_FOLDER "PointInTime"
+#define PITR_DATE_FORMAT "%Y%m%d-%H%M%S"
+#define PITR_SEPARATOR "-"
+#define PITR_CONFIG_FILE "pitr.cfg"
+#define PITR_ENABLED_MARKER "PITR_ENABLED:"

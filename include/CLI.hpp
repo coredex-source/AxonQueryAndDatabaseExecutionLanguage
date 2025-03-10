@@ -64,4 +64,12 @@ private:
     bool deleteBackup();
     std::string getBackupPath();
     bool validateUniqueness(const std::string& tableName, const Column& column, const std::string& value);
+    bool enablePITR();
+    bool createPITRCopy(const std::string& dbName);
+    std::string getPITRPath(const std::string& dbName);
+    bool pitrEnabled;
+    bool disablePITR();
+    bool isPITREnabled();
+    void savePITRState();
+    void loadPITRState();
 };

@@ -71,6 +71,13 @@
 - **Unique Constraints** - Ensure uniqueness of specific column values
 - **Backup and Restore** - Tools for database backup and recovery
 - **Point-in-Time Recovery** - Ability to restore database to a specific moment
+- TBA commands:
+  - enablePointInTimeRecovery | enablePITR [Done]
+  - listRecoverableDatabases | listRecoverableDBs | listRDBs
+  - createInstantBackup | createIB
+  - recoverDatabase | recoverDB | rDB
+  - disablePointInTimeRecovery | disablePITR [Done]
+  - editPointInTimeRecovery set maxCopies = value | editPITR set maxCopies = value
 - **Database Mirroring** - Maintain redundant copies for high availability
 
 ### Tools and Interfaces

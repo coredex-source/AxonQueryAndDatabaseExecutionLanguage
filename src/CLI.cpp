@@ -19,6 +19,7 @@ CLI::CLI() {
     loadDefaultDatabase();
     inSafeBlock = false;
     safeBlockBackupPath = "";
+    loadPITRState();
 }
 
 void CLI::start() {
@@ -45,6 +46,16 @@ bool CLI::processCommand(const std::string& command) {
         if (inSafeBlock) {
             std::cout << "Error: Cannot exit with an open safe block. Use 'closeSafeBlock' or 'discardSafeBlock' first." << std::endl;
             return true;
+        }
+        
+        // Create PITR copies for all databases if enabled
+        if (pitrEnabled) {
+            for (const auto& entry : std::filesystem::directory_iterator(std::filesystem::current_path())) {
+                if (entry.path().extension() == AQADEL_DB_EXT) {
+                    std::string dbName = entry.path().stem().string();
+                    createPITRCopy(dbName);
+                }
+            }
         }
         
         std::cout << "Thank you for using AQADEL!" << std::endl;
@@ -78,6 +89,8 @@ bool CLI::processCommand(const std::string& command) {
         std::cout << "    Note: Changes won't be permanently saved until closeSafeBlock is executed" << std::endl;
         std::cout << "  closeSafeBlock|closeTransaction|closeChannel|csb - Save and end transaction" << std::endl;
         std::cout << "  discardSafeBlock|discardTransaction|discardChannel|dsb - Discard changes and end transaction" << std::endl;
+        std::cout << "  enablePointInTimeRecovery|enablePITR - Enable Point-in-Time Recovery for the current database" << std::endl;
+        std::cout << "  disablePointInTimeRecovery|disablePITR - Disable Point-in-Time Recovery for the current database" << std::endl;
     }
     else if (cmd == "createDatabase") {
         std::string dbName;
@@ -218,6 +231,12 @@ bool CLI::processCommand(const std::string& command) {
     else if (cmd == "discardSafeBlock") {
         discardSafeBlock();
     }
+    else if (cmd == "enablePointInTimeRecovery") {
+        enablePITR();
+    }
+    else if (cmd == "disablePointInTimeRecovery") {
+        disablePITR();
+    }
     else if (!command.empty()) {
         std::cout << "Unknown command. Type 'help' for available commands." << std::endl;
     }
@@ -240,7 +259,9 @@ std::string CLI::resolveCommandAlias(const std::string& cmd) {
         {"csb", "closeSafeBlock"},
         {"discardTransaction", "discardSafeBlock"},
         {"discardChannel", "discardSafeBlock"},
-        {"dsb", "discardSafeBlock"}
+        {"dsb", "discardSafeBlock"},
+        {"enablePITR", "enablePointInTimeRecovery"},
+        {"disablePITR", "disablePointInTimeRecovery"}
     };
 
     auto it = aliases.find(cmd);
@@ -2385,4 +2406,119 @@ bool CLI::deleteBackup() {
 std::string CLI::getBackupPath() {
     // Create a backup filename based on the current database name
     return (std::filesystem::current_path() / (currentDatabase + ".backup" + AQADEL_DB_EXT)).string();
+}
+
+bool CLI::enablePITR() {
+    try {
+        // Create PITR directory if it doesn't exist
+        std::filesystem::path pitrDir = std::filesystem::current_path() / PITR_FOLDER;
+        if (!std::filesystem::exists(pitrDir)) {
+            std::filesystem::create_directory(pitrDir);
+        }
+
+        // Backup all databases
+        bool success = true;
+        bool foundDatabases = false;
+        for (const auto& entry : std::filesystem::directory_iterator(std::filesystem::current_path())) {
+            if (entry.path().extension() == AQADEL_DB_EXT) {
+                foundDatabases = true;
+                std::string dbName = entry.path().stem().string();
+                if (!createPITRCopy(dbName)) {
+                    success = false;
+                    std::cout << "Warning: Failed to create PITR copy for database '" << dbName << "'" << std::endl;
+                }
+            }
+        }
+
+        if (!foundDatabases) {
+            std::cout << "No databases found to backup" << std::endl;
+            return false;
+        }
+
+        if (success) {
+            pitrEnabled = true;
+            savePITRState();
+            std::cout << "Point-in-Time Recovery enabled and initial copies created for all databases" << std::endl;
+            return true;
+        }
+    }
+    catch (const std::exception& e) {
+        std::cout << "Error enabling PITR: " << e.what() << std::endl;
+    }
+    return false;
+}
+
+bool CLI::disablePITR() {
+    if (!pitrEnabled) {
+        std::cout << "Point-in-Time Recovery is not enabled." << std::endl;
+        return false;
+    }
+
+    pitrEnabled = false;
+    savePITRState();
+    std::cout << "Point-in-Time Recovery disabled. Existing copies are preserved." << std::endl;
+    return true;
+}
+
+void CLI::savePITRState() {
+    try {
+        std::ofstream config(PITR_CONFIG_FILE);
+        config << PITR_ENABLED_MARKER << (pitrEnabled ? "1" : "0") << std::endl;
+    }
+    catch (const std::exception&) {
+        // Silently fail - will use default disabled state
+    }
+}
+
+void CLI::loadPITRState() {
+    pitrEnabled = false;  // Default state
+    try {
+        if (std::filesystem::exists(PITR_CONFIG_FILE)) {
+            std::ifstream config(PITR_CONFIG_FILE);
+            std::string line;
+            if (std::getline(config, line)) {
+                if (line.substr(0, strlen(PITR_ENABLED_MARKER)) == PITR_ENABLED_MARKER) {
+                    pitrEnabled = (line.substr(strlen(PITR_ENABLED_MARKER)) == "1");
+                }
+            }
+        }
+    }
+    catch (const std::exception&) {
+        // Silently fail - will use default disabled state
+    }
+}
+
+bool CLI::createPITRCopy(const std::string& dbName) {
+    std::filesystem::path sourcePath = std::filesystem::current_path() / (dbName + AQADEL_DB_EXT);
+    std::string destinationPath = getPITRPath(dbName);
+
+    try {
+        // Copy the database file to the PITR location
+        std::filesystem::copy_file(
+            sourcePath,
+            destinationPath,
+            std::filesystem::copy_options::overwrite_existing
+        );
+        return true;
+    }
+    catch (const std::exception& e) {
+        std::cout << "Error creating PITR copy: " << e.what() << std::endl;
+        return false;
+    }
+}
+
+std::string CLI::getPITRPath(const std::string& dbName) {
+    // Get current time
+    auto now = std::chrono::system_clock::now();
+    auto timeT = std::chrono::system_clock::to_time_t(now);
+    std::tm tm = *std::localtime(&timeT);
+
+    // Format the timestamp
+    char timestamp[32];
+    std::strftime(timestamp, sizeof(timestamp), PITR_DATE_FORMAT, &tm);
+
+    // Construct the filename: DatabaseName-Date-Time.aqadb
+    std::string filename = dbName + PITR_SEPARATOR + std::string(timestamp) + AQADEL_DB_EXT;
+    
+    return (std::filesystem::current_path() / PITR_FOLDER / filename).string();
 }
