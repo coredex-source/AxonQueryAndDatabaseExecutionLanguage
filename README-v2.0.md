@@ -30,6 +30,7 @@
 
 - editTable TableName addColumn/removeColumn ColumnName Datatype  -  Adds or removes a column in a specified table.
   - Note: Datatype required only when adding.
+- editTable TableName renameColumn OldColumnName NewColumnName
 
 - deleteValue TableName if ColumnName == Value  -  Deletes a value from a specified table.
   - Note: Value should be in "" if string.
@@ -78,6 +79,7 @@
   - recoverDatabase | recoverDB | rDB
   - disablePointInTimeRecovery | disablePITR [Done]
   - editPointInTimeRecovery set maxCopies = value | editPITR set maxCopies = value
+  - ADD COLUMN NAME CHANGING renameColumn [Done]
 - **Database Mirroring** - Maintain redundant copies for high availability
 
 ### Tools and Interfaces

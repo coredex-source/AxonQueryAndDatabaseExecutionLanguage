@@ -76,8 +76,10 @@ bool CLI::processCommand(const std::string& command) {
         std::cout << "  createTable TableName[col1 type attribute, col2 type attribute, ...] - Create a new table, attribute(unique|primary) parameter is optional" << std::endl;
         std::cout << "    Supported types: int, float, bool, string{length}" << std::endl;
         std::cout << "  deleteTable <name> - Delete a table from current database" << std::endl;
-        std::cout << "  editTable TableName addColumn/removeColumn ColumnName [DataType] - Modify table structure" << std::endl;
-        std::cout << "    Note: DataType required only when adding columns (e.g., int, float, bool, string{length})" << std::endl;
+        std::cout << "  editTable TableName addColumn/removeColumn/renameColumn ColumnName [parameters] - Modify table structure" << std::endl;
+        std::cout << "    For addColumn: editTable TableName addColumn ColumnName DataType - DataType required (e.g., int, float, bool, string{length})" << std::endl;
+        std::cout << "    For removeColumn: editTable TableName removeColumn ColumnName" << std::endl;
+        std::cout << "    For renameColumn: editTable TableName renameColumn OldColumnName NewColumnName" << std::endl;
         std::cout << "  insertValues TableName(value1, value2, ...) - Insert values into table" << std::endl;
         std::cout << "  displayTable <name> - Display all values in table" << std::endl;
         std::cout << "  displayTable <name> select values if ColumnName == <value> - Display selected values from a table" << std::endl;
@@ -1814,10 +1816,41 @@ bool CLI::deleteDatabase(const std::string& dbName) {
     }
 }
 
+bool CLI::validateColumnName(const std::string& columnName) {
+    // Column name should not be empty
+    if (columnName.empty()) {
+        return false;
+    }
+
+    // Column name should start with a letter or underscore
+    if (!std::isalpha(columnName[0]) && columnName[0] != '_') {
+        return false;
+    }
+
+    // Column name should only contain letters, numbers, and underscores
+    for (char c : columnName) {
+        if (!std::isalnum(c) && c != '_') {
+            return false;
+        }
+    }
+
+    // Column name should not be a reserved word
+    static const std::set<std::string> reservedWords = {
+        "TABLE", "COLUMN", "END_TABLE", "DATA_START", "DATA_END",
+        "primary", "unique", "int", "float", "bool", "string"
+    };
+
+    if (reservedWords.find(columnName) != reservedWords.end()) {
+        return false;
+    }
+
+    return true;
+}
+
 bool CLI::editTable(const std::string& command) {
-    // Parse command parameters: TableName addColumn/removeColumn ColumnName [DataType]
+    // Parse command parameters: TableName operation ColumnName [parameters]
     std::istringstream iss(command);
-    std::string tableName, operation, columnName, dataType;
+    std::string tableName, operation, columnName;
     
     iss >> tableName >> operation >> columnName;
     
@@ -1831,7 +1864,7 @@ bool CLI::editTable(const std::string& command) {
     
     // Validate parameters
     if (tableName.empty() || operation.empty() || columnName.empty()) {
-        std::cout << "Error: Invalid command syntax. Use 'editTable TableName addColumn/removeColumn ColumnName [DataType]'" << std::endl;
+        std::cout << "Error: Invalid command syntax. Use 'editTable TableName addColumn/removeColumn/renameColumn ColumnName [parameters]'" << std::endl;
         return false;
     }
     
@@ -1846,12 +1879,19 @@ bool CLI::editTable(const std::string& command) {
     
     if (operation == "addColumn") {
         // For addColumn, we need a data type
+        std::string dataType;
         iss >> dataType;
         dataType.erase(0, dataType.find_first_not_of(" \t"));
         dataType.erase(dataType.find_last_not_of(" \t") + 1);
         
         if (dataType.empty()) {
             std::cout << "Error: Data type is required when adding a column" << std::endl;
+            return false;
+        }
+        
+        // Validate column name
+        if (!validateColumnName(columnName)) {
+            std::cout << "Error: Invalid column name. Column names must start with a letter or underscore and contain only letters, numbers, and underscores." << std::endl;
             return false;
         }
         
@@ -2088,24 +2128,114 @@ bool CLI::editTable(const std::string& command) {
             return false;
         }
     }
+    else if (operation == "renameColumn") {
+        // For renameColumn, we need the new column name
+        std::string newColumnName;
+        iss >> newColumnName;
+        newColumnName.erase(0, newColumnName.find_first_not_of(" \t"));
+        newColumnName.erase(newColumnName.find_last_not_of(" \t") + 1);
+        
+        if (newColumnName.empty()) {
+            std::cout << "Error: New column name is required when renaming a column" << std::endl;
+            return false;
+        }
+        
+        // Validate new column name
+        if (!validateColumnName(newColumnName)) {
+            std::cout << "Error: Invalid new column name. Column names must start with a letter or underscore and contain only letters, numbers, and underscores." << std::endl;
+            return false;
+        }
+        
+        // Check if source column exists
+        int columnIndex = -1;
+        Column targetColumn;
+        for (size_t i = 0; i < columns.size(); i++) {
+            if (columns[i].name == columnName) {
+                columnIndex = static_cast<int>(i);
+                targetColumn = columns[i];
+                break;
+            }
+        }
+        
+        if (columnIndex == -1) {
+            std::cout << "Error: Column '" << columnName << "' does not exist in table '" << tableName << "'" << std::endl;
+            return false;
+        }
+        
+        // Check if target column name already exists
+        for (const auto& col : columns) {
+            if (col.name == newColumnName) {
+                std::cout << "Error: Column named '" << newColumnName << "' already exists in table '" << tableName << "'" << std::endl;
+                return false;
+            }
+        }
+        
+        try {
+            // Read database content
+            std::filesystem::path dbPath = std::filesystem::current_path() / (currentDatabase + AQADEL_DB_EXT);
+            std::string fileContent = readAndVerifyDatabaseContent(dbPath);
+            std::string encryptedContent = extractEncryptedContent(fileContent);
+            std::string decrypted = Encryption::decrypt(encryptedContent);
+            
+            // Process and update the content
+            std::istringstream contentStream(decrypted);
+            std::ostringstream newContentStream;
+            std::string line;
+            bool inTargetTable = false;
+            
+            while (std::getline(contentStream, line)) {
+                if (line.substr(0, 6) == "TABLE ") {
+                    std::string currentTable = line.substr(6);
+                    currentTable.erase(0, currentTable.find_first_not_of(" \t"));
+                    currentTable.erase(currentTable.find_last_not_of(" \t") + 1);
+                    
+                    if (currentTable == tableName) {
+                        inTargetTable = true;
+                    } else {
+                        inTargetTable = false;
+                    }
+                    newContentStream << line << "\n";
+                }
+                else if (inTargetTable && line.substr(0, 7) == "COLUMN " && line.find(columnName) != std::string::npos) {
+                    // Replace the column name while keeping the rest of the definition
+                    std::istringstream colStream(line.substr(7));
+                    std::string colName, colType, colParams;
+                    colStream >> colName >> colType;
+                    
+                    // Get the rest of the line (parameters)
+                    std::string restOfLine;
+                    std::getline(colStream, restOfLine);
+                    
+                    newContentStream << "COLUMN " << newColumnName << " " << colType << restOfLine << "\n";
+                }
+                else {
+                    newContentStream << line << "\n";
+                }
+            }
+            
+            // Encrypt and write back to file
+            std::string newContent = newContentStream.str();
+            std::string encrypted = Encryption::encrypt(newContent);
+            
+            // Add integrity marker
+            std::string integrity = Encryption::hashString(encrypted);
+            std::string finalContent = std::string(DB_INTEGRITY_MARKER) + integrity + "\n" + encrypted;
+            
+            std::ofstream outFile(dbPath, std::ios::binary | std::ios::trunc);
+            outFile.write(finalContent.c_str(), finalContent.length());
+            
+            std::cout << "Column '" << columnName << "' renamed to '" << newColumnName << "' in table '" << tableName << "'" << std::endl;
+            return true;
+        }
+        catch (const std::exception& e) {
+            std::cout << "Error: Failed to rename column - " << e.what() << std::endl;
+            return false;
+        }
+    }
     else {
-        std::cout << "Error: Unknown operation '" << operation << "'. Use 'addColumn' or 'removeColumn'" << std::endl;
+        std::cout << "Error: Unknown operation '" << operation << "'. Use 'addColumn', 'removeColumn', or 'renameColumn'" << std::endl;
         return false;
     }
-}
-
-// Helper method to get default values for different data types
-std::string CLI::getDefaultValueForType(const std::string& dataType) {
-    if (dataType == DT_INT) {
-        return "0";
-    } else if (dataType == DT_FLOAT) {
-        return "0.0";
-    } else if (dataType == DT_BOOL) {
-        return "false";
-    } else if (dataType == DT_STRING) {
-        return "";
-    }
-    return "";
 }
 
 bool CLI::editValue(const std::string& command) {
