@@ -1013,7 +1013,7 @@ bool CLI::insertValues(const std::string& command) {
                 }
                 oss << newRow << "\n";
                 oss << TABLE_DATA_END << "\n";
-                oss << line << "\n";
+                oss << "END_TABLE\n";
                 inTargetTable = false;
             }
             else {
@@ -1628,7 +1628,6 @@ bool CLI::deleteValues(const std::string& command) {
                 }
                 oss << line << "\n";
                 dataEndFound = true;
-                inTargetTable = false;
             }
             else if (inTargetTable && dataStartFound && !dataEndFound) {
                 // Process data row
@@ -2651,4 +2650,18 @@ std::string CLI::getPITRPath(const std::string& dbName) {
     std::string filename = dbName + PITR_SEPARATOR + std::string(timestamp) + AQADEL_DB_EXT;
     
     return (std::filesystem::current_path() / PITR_FOLDER / filename).string();
+}
+
+// Helper method to get default values for different data types
+std::string CLI::getDefaultValueForType(const std::string& dataType) {
+    if (dataType == DT_INT) {
+        return "0";
+    } else if (dataType == DT_FLOAT) {
+        return "0.0";
+    } else if (dataType == DT_BOOL) {
+        return "false";
+    } else if (dataType == DT_STRING) {
+        return "";
+    }
+    return "";
 }
